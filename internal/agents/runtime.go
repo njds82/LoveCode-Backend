@@ -2,12 +2,14 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/lovecode/lovecode/internal/providers"
 	"github.com/lovecode/lovecode/internal/routing"
+	"github.com/lovecode/lovecode/internal/tools"
 )
 
 // Generator defines the internal generation contract satisfied by *routing.Router.
@@ -15,9 +17,29 @@ type Generator interface {
 	Generate(ctx context.Context, req providers.ChatRequest, profileID, groupID, providerID string) (routing.Result, error)
 }
 
+// ToolRegistry defines the interface for querying tools available to agents.
+type ToolRegistry interface {
+	ListTools() []tools.ToolDefinition
+}
+
+// TaskStatusUpdater defines the interface for reporting task status transitions.
+type TaskStatusUpdater interface {
+	UpdateTaskStatus(ctx context.Context, taskID string, status ExecutionStatus, errMessage string) error
+}
+
+// TaskStatusUpdaterFunc is a function adapter implementing TaskStatusUpdater.
+type TaskStatusUpdaterFunc func(ctx context.Context, taskID string, status ExecutionStatus, errMessage string) error
+
+func (f TaskStatusUpdaterFunc) UpdateTaskStatus(ctx context.Context, taskID string, status ExecutionStatus, errMessage string) error {
+	return f(ctx, taskID, status, errMessage)
+}
+
 type AgentRuntime struct {
-	generator Generator
-	context   *ContextManager
+	generator    Generator
+	context      *ContextManager
+	toolExecutor tools.ToolExecutor
+	toolRegistry ToolRegistry
+	taskUpdater  TaskStatusUpdater
 }
 
 func NewAgentRuntime(generator Generator, cm *ContextManager) *AgentRuntime {
@@ -28,6 +50,50 @@ func NewAgentRuntime(generator Generator, cm *ContextManager) *AgentRuntime {
 		generator: generator,
 		context:   cm,
 	}
+}
+
+// SetToolExecutor injects the tool executor.
+func (rt *AgentRuntime) SetToolExecutor(exec tools.ToolExecutor) {
+	rt.toolExecutor = exec
+}
+
+// SetToolRegistry injects the tool registry.
+func (rt *AgentRuntime) SetToolRegistry(reg ToolRegistry) {
+	rt.toolRegistry = reg
+}
+
+// SetTaskStatusUpdater injects the task status updater for state transitions.
+func (rt *AgentRuntime) SetTaskStatusUpdater(updater TaskStatusUpdater) {
+	rt.taskUpdater = updater
+}
+
+// SetToolExecutor on Service forwards to runtime.
+func (s *Service) SetToolExecutor(exec tools.ToolExecutor) {
+	if s.runtime != nil {
+		s.runtime.SetToolExecutor(exec)
+		if s.runtime.taskUpdater == nil && s.store != nil {
+			s.runtime.SetTaskStatusUpdater(s.store)
+		}
+	}
+}
+
+// SetToolRegistry on Service forwards to runtime.
+func (s *Service) SetToolRegistry(reg ToolRegistry) {
+	if s.runtime != nil {
+		s.runtime.SetToolRegistry(reg)
+	}
+}
+
+// Runtime returns the internal AgentRuntime.
+func (s *Service) Runtime() *AgentRuntime {
+	return s.runtime
+}
+
+// UpdateTaskStatus implements TaskStatusUpdater on *Store.
+func (s *Store) UpdateTaskStatus(ctx context.Context, taskID string, status ExecutionStatus, errMessage string) error {
+	query := `UPDATE agent_tasks SET status = ?, error_message = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, string(status), errMessage, taskID)
+	return err
 }
 
 type TaskExecutionResult struct {
@@ -100,6 +166,34 @@ func (rt *AgentRuntime) ExecuteTask(ctx context.Context, agent AgentDefinition, 
 		}
 	}
 
+	// Populate req.Tools and req.ToolChoice when tools are available and agent has capabilities
+	if rt.toolRegistry != nil && len(agent.Capabilities) > 0 {
+		var availableTools []providers.Tool
+		allDefs := rt.toolRegistry.ListTools()
+		for _, def := range allDefs {
+			if !def.Enabled {
+				continue
+			}
+			authorized := true
+			if rt.toolExecutor != nil && len(def.RequiredCapabilities) > 0 {
+				if err := rt.toolExecutor.ValidateCapabilities(def.Name, agent.Capabilities); err != nil {
+					authorized = false
+				}
+			}
+			if authorized {
+				availableTools = append(availableTools, providers.Tool{
+					Name:        def.Name,
+					Description: def.Description,
+					Parameters:  def.ParametersSchema,
+				})
+			}
+		}
+		if len(availableTools) > 0 {
+			req.Tools = availableTools
+			req.ToolChoice = &providers.ToolChoice{Mode: providers.ToolChoiceAuto}
+		}
+	}
+
 	// 3. Determine max requests (bounded iterations)
 	maxRequests := agent.MaxRequests
 	if maxRequests <= 0 {
@@ -144,9 +238,59 @@ func (rt *AgentRuntime) ExecuteTask(ctx context.Context, agent AgentDefinition, 
 			res.ModelID = lastGen.ModelID
 			res.Attempts += lastGen.Attempts
 			res.OutputText = lastGen.Response.Message.Text()
+
+			respMsg := lastGen.Response.Message
+			if len(respMsg.ToolCalls) > 0 && rt.toolExecutor != nil {
+				// 1. Transition task state: running -> waiting
+				if rt.taskUpdater != nil && task.ID != "" {
+					_ = rt.taskUpdater.UpdateTaskStatus(ctx, task.ID, StatusWaiting, "")
+				}
+
+				// 2. Append assistant message with ToolCalls to req.Messages
+				req.Messages = append(req.Messages, providers.Message{
+					Role:      providers.RoleAssistant,
+					Content:   respMsg.Content,
+					ToolCalls: respMsg.ToolCalls,
+				})
+
+				// 3. Execute each tool call
+				for _, tc := range respMsg.ToolCalls {
+					execCtx := tools.ExecutionContext{
+						RunID:               task.RunID,
+						TaskID:              task.ID,
+						AgentID:             agent.ID,
+						GrantedCapabilities: agent.Capabilities,
+						GrantedPermissions:  agent.Permissions,
+						Actor:               agent.ID,
+					}
+					resTool, execErr := rt.toolExecutor.Execute(ctx, execCtx, tc.Name, json.RawMessage(tc.Arguments))
+					var toolOutput string
+					if execErr != nil {
+						toolOutput = fmt.Sprintf("Error: %v", execErr)
+					} else {
+						toolOutput = resTool.Output
+					}
+
+					// 4. Append providers.RoleTool message with output
+					req.Messages = append(req.Messages, providers.Message{
+						Role:       providers.RoleTool,
+						ToolCallID: tc.ID,
+						Name:       tc.Name,
+						Content:    []providers.ContentPart{providers.TextPart(toolOutput)},
+					})
+				}
+
+				// 5. Transition task state: waiting -> running
+				if rt.taskUpdater != nil && task.ID != "" {
+					_ = rt.taskUpdater.UpdateTaskStatus(ctx, task.ID, StatusRunning, "")
+				}
+
+				// 6. Continue to next iteration of LLM generation
+				continue
+			}
 		}
 
-		// For single-turn tasks, we are done
+		// For single-turn or when no tool calls: we are done
 		break
 	}
 

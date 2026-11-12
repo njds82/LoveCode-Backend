@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -241,13 +242,21 @@ func (r *Registry) RegisterDynamicAgent(runID string, parentAgentID string, dyna
 			// check dynamic parent
 			parent, ok = runMap[parentAgentID]
 		}
-		if ok {
-			if err := verifyPermissionInheritance(parent.Permissions, dynamicAgent.Permissions); err != nil {
-				return fmt.Errorf("privilege escalation rejected: %w", err)
-			}
-			if err := verifyPermissionInheritance(parent.Capabilities, dynamicAgent.Capabilities); err != nil {
-				return fmt.Errorf("capability escalation rejected: %w", err)
-			}
+		if !ok {
+			return fmt.Errorf("parent agent %q not found", parentAgentID)
+		}
+		if err := verifyPermissionInheritance(parent.Permissions, dynamicAgent.Permissions); err != nil {
+			return fmt.Errorf("privilege escalation rejected: %w", err)
+		}
+		if err := verifyPermissionInheritance(parent.Capabilities, dynamicAgent.Capabilities); err != nil {
+			return fmt.Errorf("capability escalation rejected: %w", err)
+		}
+	} else {
+		if len(dynamicAgent.Permissions) > 0 {
+			return errors.New("unparented dynamic agent cannot declare permissions")
+		}
+		if len(dynamicAgent.Capabilities) > 0 {
+			return errors.New("unparented dynamic agent cannot declare capabilities")
 		}
 	}
 
