@@ -19,13 +19,12 @@ func TestF05_Agent_AgentCreation(t *testing.T) {
 		"name":        "Test Tool Agent",
 		"description": "Agent for testing tool execution integration",
 		"role":        "worker",
-		"model_group": "default",
+		"model":       "mock-model",
 		"capabilities": []string{
 			"tools:filesystem:read",
 			"tools:sysinfo",
 		},
 		"permissions": []string{"read"},
-		"max_depth":   3,
 	}
 
 	var created map[string]any
@@ -34,7 +33,9 @@ func TestF05_Agent_AgentCreation(t *testing.T) {
 		t.Fatalf("POST /v1/agents failed: %v", err)
 	}
 	srv.AdminClient().SkipIfUnregistered(t, resp, "F5: Agents API")
-	srv.AdminClient().AssertStatus(t, resp, http.StatusOK)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected HTTP status 200/201, got %d with body: %s", resp.StatusCode, resp.String())
+	}
 }
 
 func TestF05_Agent_MultiTurn_ToolCallingLoop(t *testing.T) {

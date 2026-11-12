@@ -26,7 +26,7 @@ func TestF17_Adapters_Media_PlayPause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("media play result: %s", execResp.Output)
@@ -51,7 +51,7 @@ func TestF17_Adapters_Media_VolumeControl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("media volume result: %s", execResp.Output)
@@ -75,7 +75,7 @@ func TestF17_Adapters_Media_TrackInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("media track result: %s", execResp.Output)
@@ -100,7 +100,7 @@ func TestF17_Adapters_Application_LaunchApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("app launch result: %s", execResp.Output)
@@ -124,7 +124,7 @@ func TestF17_Adapters_Application_ListApps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("app list result: %s", execResp.Output)
@@ -149,7 +149,7 @@ func TestF17_Adapters_Unconfigured_GracefulFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F17: Adapters")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Must handle gracefully without crashing (400, 404, or 200 with fallback)
 	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {

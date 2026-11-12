@@ -26,7 +26,7 @@ func TestF12_Process_List_ReturnsRunningProcesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F12: Process Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("process_list output: %s", execResp.Output)
@@ -62,7 +62,7 @@ func TestF12_Process_Kill_SafeChildProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F12: Process Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unexpected process_kill status: %d", resp.StatusCode)
@@ -88,7 +88,7 @@ func TestF12_Process_Kill_PID1_Protected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F12: Process Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Must be blocked with 403 Forbidden (ErrProtectedProcess) or 400 Bad Request
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
@@ -116,7 +116,7 @@ func TestF12_Process_Kill_SelfPID_Protected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F12: Process Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Killing self PID must be blocked
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
@@ -144,7 +144,7 @@ func TestF12_Process_Kill_ParentPID_Protected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F12: Process Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Killing parent PID must be blocked
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {

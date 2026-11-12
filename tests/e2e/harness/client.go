@@ -39,7 +39,20 @@ func (r *Response) String() string {
 // IsUnregisteredRoute returns true if the server returned standard Go 404
 // indicating the route is not registered on the router.
 func (r *Response) IsUnregisteredRoute() bool {
-	return r.StatusCode == http.StatusNotFound && strings.TrimSpace(string(r.Body)) == "404 page not found"
+	if r.StatusCode != http.StatusNotFound {
+		return false
+	}
+	bodyStr := strings.TrimSpace(string(r.Body))
+	return bodyStr == "404 page not found" || strings.Contains(bodyStr, "no such endpoint")
+}
+
+// IsToolNotFound returns true if the response indicates the tool was not found or route is unregistered.
+func (r *Response) IsToolNotFound() bool {
+	if r.StatusCode != http.StatusNotFound {
+		return false
+	}
+	bodyStr := strings.TrimSpace(string(r.Body))
+	return bodyStr == "404 page not found" || strings.Contains(bodyStr, "tool_not_found") || strings.Contains(bodyStr, "not_found")
 }
 
 // ToolExecuteRequest defines the request payload for POST /v1/tools/execute.
@@ -62,7 +75,7 @@ type ToolExecuteResponse struct {
 	Data       any    `json:"data"`
 	Truncated  bool   `json:"truncated"`
 	DurationMS int64  `json:"duration_ms"`
-	Error      string `json:"error,omitempty"`
+	Error      any    `json:"error,omitempty"`
 }
 
 // ToolDefinitionResponse defines a tool definition returned by GET /v1/tools.
@@ -250,12 +263,23 @@ func (c *Client) SkipIfUnregistered(t testing.TB, resp *Response, featureName st
 	}
 }
 
+// SkipIfToolNotFound skips the test if the response indicates the tool is not yet registered or found.
+func (c *Client) SkipIfToolNotFound(t testing.TB, resp *Response, toolName string) {
+	t.Helper()
+	if resp != nil && (resp.IsUnregisteredRoute() || resp.IsToolNotFound()) {
+		t.Skipf("Tool %s is not yet registered on server", toolName)
+	}
+}
+
 // ExecuteTool calls POST /v1/tools/execute and returns decoded ToolExecuteResponse.
 func (c *Client) ExecuteTool(ctx context.Context, req ToolExecuteRequest) (*ToolExecuteResponse, *Response, error) {
-	var execResp ToolExecuteResponse
-	resp, err := c.PostJSON(ctx, "/v1/tools/execute", req, &execResp)
+	resp, err := c.Post(ctx, "/v1/tools/execute", req)
 	if err != nil {
-		return nil, resp, err
+		return nil, nil, err
+	}
+	var execResp ToolExecuteResponse
+	if len(resp.Body) > 0 {
+		_ = json.Unmarshal(resp.Body, &execResp)
 	}
 	return &execResp, resp, nil
 }

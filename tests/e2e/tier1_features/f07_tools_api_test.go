@@ -100,8 +100,7 @@ func TestF07_ToolsAPI_ExecuteTool_RequiresWriteScope(t *testing.T) {
 	}
 
 	// Read client attempting POST /v1/tools/execute should be rejected with 403
-	var execResp harness.ToolExecuteResponse
-	resp, err := srv.ReadClient().PostJSON(ctx, "/v1/tools/execute", req, &execResp)
+	resp, err := srv.ReadClient().Post(ctx, "/v1/tools/execute", req)
 	if err != nil {
 		t.Fatalf("execute with read token failed: %v", err)
 	}

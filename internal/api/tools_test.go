@@ -153,14 +153,12 @@ func TestToolsAPIListAndGet(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
-		var resp struct {
-			Tools []tools.ToolDefinition `json:"tools"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		var toolsList []tools.ToolDefinition
+		if err := json.Unmarshal(rec.Body.Bytes(), &toolsList); err != nil {
 			t.Fatal(err)
 		}
-		if len(resp.Tools) != 1 || resp.Tools[0].Name != "fs_read" {
-			t.Fatalf("expected only enabled tool fs_read, got: %+v", resp.Tools)
+		if len(toolsList) != 1 || toolsList[0].Name != "fs_read" {
+			t.Fatalf("expected only enabled tool fs_read, got: %+v", toolsList)
 		}
 	})
 
@@ -169,12 +167,10 @@ func TestToolsAPIListAndGet(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
-		var resp struct {
-			Tools []tools.ToolDefinition `json:"tools"`
-		}
-		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-		if len(resp.Tools) != 2 {
-			t.Fatalf("expected 2 tools, got %d", len(resp.Tools))
+		var toolsList []tools.ToolDefinition
+		_ = json.Unmarshal(rec.Body.Bytes(), &toolsList)
+		if len(toolsList) != 2 {
+			t.Fatalf("expected 2 tools, got %d", len(toolsList))
 		}
 	})
 
@@ -183,12 +179,10 @@ func TestToolsAPIListAndGet(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
-		var resp struct {
-			Tools []tools.ToolDefinition `json:"tools"`
-		}
-		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-		if len(resp.Tools) != 1 || resp.Tools[0].Name != "fs_read" {
-			t.Fatalf("expected 1 filesystem tool, got %d", len(resp.Tools))
+		var toolsList []tools.ToolDefinition
+		_ = json.Unmarshal(rec.Body.Bytes(), &toolsList)
+		if len(toolsList) != 1 || toolsList[0].Name != "fs_read" {
+			t.Fatalf("expected 1 filesystem tool, got %d", len(toolsList))
 		}
 	})
 

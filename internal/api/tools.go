@@ -45,7 +45,7 @@ func (s *Server) handleToolsList(w http.ResponseWriter, r *http.Request) {
 		filtered = []tools.ToolDefinition{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"tools": filtered})
+	writeJSON(w, http.StatusOK, filtered)
 }
 
 func (s *Server) handleToolGet(w http.ResponseWriter, r *http.Request) {

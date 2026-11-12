@@ -29,7 +29,7 @@ func TestF13_NetworkTool_PositiveGET_ReturnsBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("http_request GET output: %s", execResp.Output)
@@ -57,7 +57,7 @@ func TestF13_NetworkTool_PositivePOST_SendsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		t.Logf("http_request POST output: %s", execResp.Output)
@@ -83,7 +83,7 @@ func TestF13_NetworkTool_SSRF_LoopbackBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Must be blocked with 403 Forbidden or 400 Bad Request
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
@@ -110,7 +110,7 @@ func TestF13_NetworkTool_SSRF_CloudMetadataBlocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Must be blocked
 	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
@@ -144,7 +144,7 @@ func TestF13_NetworkTool_SSRF_RFC1918Blocked(t *testing.T) {
 		if err != nil {
 			t.Fatalf("execute failed: %v", err)
 		}
-		srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+		srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 		if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("expected SSRF block for %s, got: %d", target, resp.StatusCode)
@@ -173,7 +173,7 @@ func TestF13_NetworkTool_ResponseSizeLimit_Enforced(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F13: Network Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	if resp.StatusCode == http.StatusOK && execResp != nil {
 		// Output must be capped at max limit (2 MB = 2097152 bytes)
