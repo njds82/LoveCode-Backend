@@ -23,6 +23,7 @@ import (
 	"github.com/lovecode/lovecode/internal/routing"
 	"github.com/lovecode/lovecode/internal/security"
 	"github.com/lovecode/lovecode/internal/storage"
+	"github.com/lovecode/lovecode/internal/tools"
 )
 
 // Server represents a running LoveCode test server instance.
@@ -36,6 +37,7 @@ type Server struct {
 	TokenStore *security.TokenStore
 	AuditLog   *audit.Log
 	Agents     *agents.Service
+	Tools      *tools.Service
 	Router     *routing.Router
 	Providers  *providers.Manager
 	Client     *Client
@@ -128,6 +130,10 @@ func NewServer(t testing.TB, opts ...ServerOptions) *Server {
 		HealthInterval: 60 * time.Second,
 	})
 
+	toolsStore := tools.NewStore(db.DB)
+	toolsService := tools.NewService(toolsStore, auditLog, logger)
+	_ = toolsService.Start(ctx)
+
 	agentStore := agents.NewStore(db.DB)
 	agentService := agents.NewService(config.AgentConfig{
 		MaxConcurrentRuns:   8,
@@ -135,9 +141,12 @@ func NewServer(t testing.TB, opts ...ServerOptions) *Server {
 		MaxParallelPerRun:   4,
 		MaxDelegationDepth:  5,
 	}, agentStore, router, auditLog, logger)
+	agentService.SetToolExecutor(toolsService.Executor())
+	agentService.SetToolRegistry(toolsService.Registry())
 
 	rt := core.New(logger)
 	rt.Register(agentService)
+	rt.Register(toolsService)
 
 	var opt ServerOptions
 	if len(opts) > 0 {
@@ -164,6 +173,7 @@ func NewServer(t testing.TB, opts ...ServerOptions) *Server {
 		Providers: pm,
 		Router:    router,
 		Agents:    agentService,
+		Tools:     toolsService,
 		Health:    rt.Health,
 		Version:   "0.1.0-e2e",
 	})
@@ -181,6 +191,7 @@ func NewServer(t testing.TB, opts ...ServerOptions) *Server {
 		TokenStore: tokenStore,
 		AuditLog:   auditLog,
 		Agents:     agentService,
+		Tools:      toolsService,
 		Router:     router,
 		Providers:  pm,
 		httpSrv:    ts,

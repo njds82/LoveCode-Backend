@@ -18,12 +18,12 @@ type MockMCPSSECall struct {
 
 // MockMCPSSEServer is an HTTP/SSE server implementing the Model Context Protocol.
 type MockMCPSSEServer struct {
-	Server    *httptest.Server
-	URL       string
-	Calls     []MockMCPSSECall
-	sseChans  map[chan string]struct{}
-	mu        sync.Mutex
-	closed    bool
+	Server   *httptest.Server
+	URL      string
+	Calls    []MockMCPSSECall
+	sseChans map[chan string]struct{}
+	mu       sync.Mutex
+	closed   bool
 }
 
 // NewMockMCPSSEServer starts a new mock MCP HTTP/SSE server.

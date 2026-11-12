@@ -44,25 +44,25 @@ func (r *Response) IsUnregisteredRoute() bool {
 
 // ToolExecuteRequest defines the request payload for POST /v1/tools/execute.
 type ToolExecuteRequest struct {
-	ToolName            string          `json:"tool_name"`
-	Arguments           any             `json:"arguments"`
-	RunID               string          `json:"run_id,omitempty"`
-	TaskID              string          `json:"task_id,omitempty"`
-	AgentID             string          `json:"agent_id,omitempty"`
-	TeamID              string          `json:"team_id,omitempty"`
-	GrantedCapabilities []string        `json:"granted_capabilities,omitempty"`
-	TimeoutMS           int64           `json:"timeout_ms,omitempty"`
-	MaxOutputBytes      int64           `json:"max_output_bytes,omitempty"`
+	ToolName            string   `json:"tool_name"`
+	Arguments           any      `json:"arguments"`
+	RunID               string   `json:"run_id,omitempty"`
+	TaskID              string   `json:"task_id,omitempty"`
+	AgentID             string   `json:"agent_id,omitempty"`
+	TeamID              string   `json:"team_id,omitempty"`
+	GrantedCapabilities []string `json:"granted_capabilities,omitempty"`
+	TimeoutMS           int64    `json:"timeout_ms,omitempty"`
+	MaxOutputBytes      int64    `json:"max_output_bytes,omitempty"`
 }
 
 // ToolExecuteResponse defines the response structure from POST /v1/tools/execute.
 type ToolExecuteResponse struct {
-	ToolName   string          `json:"tool_name"`
-	Output     string          `json:"output"`
-	Data       any             `json:"data"`
-	Truncated  bool            `json:"truncated"`
-	DurationMS int64           `json:"duration_ms"`
-	Error      string          `json:"error,omitempty"`
+	ToolName   string `json:"tool_name"`
+	Output     string `json:"output"`
+	Data       any    `json:"data"`
+	Truncated  bool   `json:"truncated"`
+	DurationMS int64  `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
 }
 
 // ToolDefinitionResponse defines a tool definition returned by GET /v1/tools.

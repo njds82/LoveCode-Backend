@@ -20,6 +20,7 @@ import (
 	"github.com/lovecode/lovecode/internal/providers"
 	"github.com/lovecode/lovecode/internal/routing"
 	"github.com/lovecode/lovecode/internal/security"
+	"github.com/lovecode/lovecode/internal/tools"
 )
 
 type Deps struct {
@@ -30,6 +31,7 @@ type Deps struct {
 	Providers *providers.Manager
 	Router    *routing.Router
 	Agents    *agents.Service
+	Tools     *tools.Service
 	Health    func(ctx context.Context) map[string]core.Health
 	Version   string
 }
@@ -41,6 +43,7 @@ type Server struct {
 	providers *providers.Manager
 	router    *routing.Router
 	agents    *agents.Service
+	tools     *tools.Service
 	health    func(ctx context.Context) map[string]core.Health
 	version   string
 	started   time.Time
@@ -57,7 +60,7 @@ type Server struct {
 func New(d Deps) *Server {
 	s := &Server{
 		log: d.Log, tokens: d.Tokens, audit: d.Audit, providers: d.Providers, health: d.Health, version: d.Version,
-		router: d.Router, agents: d.Agents, cfg: d.Config, localMode: d.Config.Mode == config.ModeLocal, maxBody: d.Config.MaxBodyBytes,
+		router: d.Router, agents: d.Agents, tools: d.Tools, cfg: d.Config, localMode: d.Config.Mode == config.ModeLocal, maxBody: d.Config.MaxBodyBytes,
 		limiter: newLimiter(d.Config.RateLimitPerSec, d.Config.RateLimitBurst),
 	}
 	mux := http.NewServeMux()
@@ -84,6 +87,12 @@ func New(d Deps) *Server {
 	mux.Handle("GET /v1/routing/ratelimits", s.protect("read", s.handleRateLimitsGet))
 	mux.Handle("GET /v1/routing/health", s.protect("read", s.handleRoutingHealthGet))
 	mux.Handle("PATCH /v1/models/{id...}", s.protect(security.ScopeAdmin, s.handleModelPatch))
+
+	// Tools
+	mux.Handle("GET /v1/tools", s.protect("read", s.handleToolsList))
+	mux.Handle("GET /v1/tools/{id}", s.protect("read", s.handleToolGet))
+	mux.Handle("PATCH /v1/tools/{id}", s.protect(security.ScopeAdmin, s.handleToolPatch))
+	mux.Handle("POST /v1/tools/execute", s.protect("write", s.handleToolExecute))
 
 	// Agents
 	mux.Handle("GET /v1/agents", s.protect("read", s.handleAgentsList))

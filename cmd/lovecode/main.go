@@ -20,6 +20,7 @@ import (
 	"github.com/lovecode/lovecode/internal/routing"
 	"github.com/lovecode/lovecode/internal/security"
 	"github.com/lovecode/lovecode/internal/storage"
+	"github.com/lovecode/lovecode/internal/tools"
 )
 
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
@@ -102,8 +103,13 @@ func run() error {
 		HealthInterval: 60 * time.Second,
 	})
 
+	toolsStore := tools.NewStore(db.DB)
+	toolsService := tools.NewService(toolsStore, auditLog, log)
+
 	agentStore := agents.NewStore(db.DB)
 	agentService := agents.NewService(cfg.Agents, agentStore, router, auditLog, log)
+	agentService.SetToolExecutor(toolsService.Executor())
+	agentService.SetToolRegistry(toolsService.Registry())
 
 	rt := core.New(log)
 	rt.Register(core.FuncModule{
@@ -171,10 +177,11 @@ func run() error {
 			return core.Health{Status: core.StatusOK}
 		},
 	})
+	rt.Register(toolsService)
 	rt.Register(agentService)
 	rt.Register(api.New(api.Deps{
 		Config: cfg.Server, Log: log, Tokens: tokens, Audit: auditLog, Providers: providerManager, Router: router,
-		Agents: agentService, Health: rt.Health, Version: version,
+		Agents: agentService, Tools: toolsService, Health: rt.Health, Version: version,
 	}))
 
 	if err := rt.Start(ctx); err != nil {

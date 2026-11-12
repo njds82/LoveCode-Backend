@@ -262,13 +262,13 @@ func TestF16_MCPAPI_RegisterServer_AdminScope(t *testing.T) {
 	defer cancel()
 
 	body := map[string]any{
-		"id":          "test-stdio-mcp",
-		"name":        "Test Stdio MCP Server",
-		"transport":   "stdio",
-		"endpoint":    "echo",
-		"args":        []string{"mcp"},
-		"timeout_ms":  5000,
-		"enabled":     true,
+		"id":         "test-stdio-mcp",
+		"name":       "Test Stdio MCP Server",
+		"transport":  "stdio",
+		"endpoint":   "echo",
+		"args":       []string{"mcp"},
+		"timeout_ms": 5000,
+		"enabled":    true,
 	}
 
 	// Non-admin token should be rejected with 403
