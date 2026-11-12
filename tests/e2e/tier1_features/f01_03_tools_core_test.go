@@ -225,7 +225,7 @@ func TestF02_ToolRegistry_DisabledToolExecutionBlocked(t *testing.T) {
 	defer cancel()
 
 	// Disable tool first
-	_, patchResp, _ := srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": false})
+	patchResp, _ := srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": false})
 	srv.AdminClient().SkipIfUnregistered(t, patchResp, "F2: Tool Registry")
 
 	if patchResp != nil && patchResp.StatusCode == http.StatusOK {
