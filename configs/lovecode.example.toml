@@ -1,0 +1,130 @@
+# Example LoveCode configuration. Every key shown is the default unless noted.
+# data_dir = "~/.local/share/lovecode"   # default: $XDG_DATA_HOME/lovecode
+
+[server]
+mode = "local"              # local | lan | remote
+listen = "127.0.0.1:7878"   # local mode requires a loopback address
+# tls_cert = "/path/cert.pem"   # required for mode = "remote"
+# tls_key  = "/path/key.pem"
+read_header_timeout = "10s"
+shutdown_timeout = "15s"
+rate_limit_per_sec = 20
+rate_limit_burst = 40
+max_body_bytes = 4194304
+
+[logging]
+level = "info"              # debug | info | warn | error
+format = "text"             # text | json
+
+# Feature flags are validated against a known list. In Phase 2 provider support
+# exists; other flags still have no effect.
+[features]
+# providers = true
+
+# ---------------------------------------------------------------------------
+# Providers (Phase 2). Remove the leading "# " to enable an example.
+# Credentials are referenced by environment variable name, never stored here.
+# Provider IDs are lowercase; model IDs are globally unique.
+# ---------------------------------------------------------------------------
+
+# One OpenAI-compatible provider.
+#
+# [[providers]]
+# id = "openai"
+# type = "openai"
+# display_name = "OpenAI"
+# endpoint = "https://api.openai.com/v1"
+# api_key_env = "OPENAI_API_KEY"
+# discover_models = true
+#
+# [[providers.models]]
+# id = "openai:gpt-4.1-mini"
+# provider_model_id = "gpt-4.1-mini"
+# display_name = "GPT-4.1 mini"
+# context_window = 1047576
+# input_modalities = ["text", "image"]
+# output_modalities = ["text"]
+# streaming = true
+# tool_calls = true
+# structured_output = true
+# tags = ["cloud", "general"]
+
+# A second, different OpenAI-compatible provider (different endpoint/key).
+#
+# [[providers]]
+# id = "together"
+# type = "openai"
+# display_name = "Together AI"
+# endpoint = "https://api.together.xyz/v1"
+# api_key_env = "TOGETHER_API_KEY"
+#
+# [providers.default_headers]
+# X-Tenant = "personal"
+#
+# [[providers.models]]
+# id = "together:llama-3.3-70b"
+# provider_model_id = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+# display_name = "Llama 3.3 70B"
+# streaming = true
+# tool_calls = true
+
+# Ollama (optional, local). Default endpoint is http://127.0.0.1:11434.
+#
+# [[providers]]
+# id = "ollama"
+# type = "ollama"
+# display_name = "Local Ollama"
+# discover_models = true
+#
+# [providers.settings]
+# keep_alive = "5m"
+#
+# [[providers.models]]
+# provider_model_id = "llama3.2:latest"
+# display_name = "Llama 3.2"
+# streaming = true
+# tool_calls = true
+
+# Deterministic mock provider: no credentials or network.
+#
+# [[providers]]
+# id = "mock"
+# type = "mock"
+# display_name = "Development Mock"
+#
+# [providers.settings]
+# reply = "Hello from the deterministic mock provider."
+# finish_reason = "stop"
+# prompt_tokens = 12
+# completion_tokens = 8
+#
+# [[providers.models]]
+# id = "mock:chat"
+# provider_model_id = "mock-1"
+# display_name = "Mock Chat"
+# streaming = true
+# tool_calls = true
+# structured_output = true
+# tags = ["offline", "deterministic"]
+
+# Phase 3 routing is managed at runtime through /v1/routing/profiles and
+# /v1/routing/groups. Those records are persisted in SQLite.
+# Example admin request:
+# PUT /v1/routing/profiles/default
+# {"policy":"priority","max_attempts":3,"candidates":[{"provider_id":"mock","model_id":"mock:chat","priority":10,"weight":1}]}
+
+# ---------------------------------------------------------------------------
+# Agent Engine & Scheduling Limits (Phase 4)
+# ---------------------------------------------------------------------------
+[agents]
+max_concurrent_runs = 8
+max_concurrent_agents = 4
+max_parallel_per_run = 4
+max_team_size = 16
+max_delegation_depth = 3
+max_dynamic_agents = 4
+max_tasks_per_run = 50
+max_execution_duration = "10m"
+max_requests_per_task = 5
+queue_limit = 32
+
