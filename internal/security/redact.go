@@ -203,6 +203,13 @@ func (rw *RedactingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+var unclosedPrefixRes = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._~+/=-]*$`),
+	regexp.MustCompile(`(?i)aws[_\-\s]?secret[_\-\s]?(?:access[_\-\s]?)?key[\s:="']*[A-Za-z0-9/+=]*$`),
+	regexp.MustCompile(`(?i)https?://[^:\s/@]+:[^@\s/]*$`),
+	regexp.MustCompile(`(?:AKIA|ASIA|github_pat_|gh[pousr]_|xox[baprs]-|lc_|sk-|AIza|gsk_|hf_|eyJ)[A-Za-z0-9._~+/=-]*$`),
+}
+
 // drain processes buffered data. If force is true, all buffered data is redacted and written.
 // If force is false, a tail window is retained to preserve tokens across chunk boundaries.
 func (rw *RedactingWriter) drain(force bool) error {
@@ -212,6 +219,9 @@ func (rw *RedactingWriter) drain(force bool) error {
 	if force {
 		redacted := rw.redactor.RedactString(string(rw.buf))
 		rw.buf = rw.buf[:0]
+		if cap(rw.buf) > 64*1024 {
+			rw.buf = make([]byte, 0, 4096)
+		}
 		_, err := rw.w.Write([]byte(redacted))
 		return err
 	}
@@ -220,65 +230,128 @@ func (rw *RedactingWriter) drain(force bool) error {
 		return nil
 	}
 
-	safeEnd := len(rw.buf) - rw.tailWindow
+	// 1. Redact any complete secrets in the entire buffer first.
+	// This ensures that any complete secret is masked before chunking/splitting.
+	redactedBuf := rw.redactor.RedactString(string(rw.buf))
+	rw.buf = []byte(redactedBuf)
 
-	// PEM blocks can span multiple lines. Protect unclosed PEM blocks or PEM blocks
-	// that would be bisected by safeEnd.
-	beginIdx := bytes.LastIndex(rw.buf, []byte("-----BEGIN"))
-	if beginIdx >= 0 && len(rw.buf) < rw.maxBuffer {
-		endSub := bytes.Index(rw.buf[beginIdx:], []byte("-----END"))
-		if endSub == -1 {
-			// Unclosed BEGIN: do not flush past BEGIN
-			if beginIdx < safeEnd {
-				safeEnd = beginIdx
+	for len(rw.buf) > rw.tailWindow {
+		safeEnd := len(rw.buf) - rw.tailWindow
+
+		// Multi-PEM block handling: scan all -----BEGIN markers in rw.buf
+		pemBegin := []byte("-----BEGIN")
+		pemEnd := []byte("-----END")
+		for searchStart := 0; searchStart < len(rw.buf); {
+			relIdx := bytes.Index(rw.buf[searchStart:], pemBegin)
+			if relIdx == -1 {
+				break
 			}
-		} else {
-			// Find end of line after -----END ... KEY-----
+			beginIdx := searchStart + relIdx
+			endSub := bytes.Index(rw.buf[beginIdx:], pemEnd)
+			if endSub == -1 {
+				// Incomplete PEM block: hold back flushing past beginIdx unless buffer is at maxBuffer
+				if beginIdx < safeEnd && len(rw.buf) < rw.maxBuffer {
+					safeEnd = beginIdx
+				}
+				break
+			}
+
+			// Complete PEM block: determine end of line after -----END ... -----
 			endMarker := beginIdx + endSub
 			lineEnd := bytes.IndexByte(rw.buf[endMarker:], '\n')
-			var pemEnd int
+			var blockEnd int
 			if lineEnd == -1 {
-				pemEnd = len(rw.buf)
+				blockEnd = len(rw.buf)
 			} else {
-				pemEnd = endMarker + lineEnd + 1
+				blockEnd = endMarker + lineEnd + 1
 			}
-			// If safeEnd falls inside the PEM block, cut before the block so it stays intact
-			if safeEnd < pemEnd && beginIdx < safeEnd {
+
+			// If safeEnd falls inside this complete PEM block, cut before the block so it stays intact
+			if safeEnd > beginIdx && safeEnd < blockEnd {
 				safeEnd = beginIdx
 			}
+			searchStart = blockEnd
 		}
-	}
 
-	if safeEnd <= 0 {
-		if len(rw.buf) >= rw.maxBuffer {
-			// Buffer limit reached: must flush even if unclosed PEM block
-			safeEnd = len(rw.buf) - rw.tailWindow
-		} else {
+		// Protect unclosed secret prefixes spanning safeEnd
+		if safeEnd > 0 && safeEnd <= len(rw.buf) {
+			checkWindow := safeEnd
+			if checkWindow > 1024 {
+				checkWindow = 1024
+			}
+			prefixSlice := rw.buf[safeEnd-checkWindow : safeEnd]
+
+			for _, re := range unclosedPrefixRes {
+				loc := re.FindIndex(prefixSlice)
+				if loc != nil {
+					matchStart := (safeEnd - checkWindow) + loc[0]
+					if matchStart < safeEnd {
+						safeEnd = matchStart
+					}
+					break
+				}
+			}
+		}
+
+		// If safeEnd falls inside a "[REDACTED]" marker, cut before "["
+		if safeEnd > 0 && safeEnd < len(rw.buf) {
+			lastBracket := bytes.LastIndex(rw.buf[:safeEnd], []byte("["))
+			if lastBracket >= 0 {
+				endBracket := bytes.Index(rw.buf[lastBracket:], []byte("]"))
+				if endBracket == -1 || lastBracket+endBracket+1 > safeEnd {
+					subLen := len(Redacted)
+					if lastBracket+subLen > len(rw.buf) {
+						subLen = len(rw.buf) - lastBracket
+					}
+					if strings.HasPrefix(Redacted, string(rw.buf[lastBracket:lastBracket+subLen])) {
+						safeEnd = lastBracket
+					}
+				}
+			}
+		}
+
+		// Ensure safeEnd does not bisect a multi-byte UTF-8 character
+		for safeEnd > 0 && safeEnd < len(rw.buf) && (rw.buf[safeEnd]&0xC0) == 0x80 {
+			safeEnd--
+		}
+
+		if safeEnd <= 0 {
+			if len(rw.buf) >= rw.maxBuffer {
+				safeEnd = len(rw.buf) - rw.tailWindow
+				if safeEnd <= 0 {
+					safeEnd = len(rw.buf)
+				}
+			} else {
+				return nil
+			}
+		}
+
+		// Try to split on a natural token delimiter (whitespace, comma, semicolon)
+		// Notice: punctuation characters like ":", "=", "\"", "'" are intentionally excluded
+		// to prevent severing credentials from their key/scheme prefixes.
+		flushEnd := safeEnd
+		lastDelim := bytes.LastIndexAny(rw.buf[:safeEnd], "\r\n \t,;")
+		if lastDelim >= 0 {
+			flushEnd = lastDelim + 1
+		} else if len(rw.buf) < rw.maxBuffer {
+			// No delimiter in safe window and not at max buffer: wait for delimiter
 			return nil
 		}
+
+		if flushEnd <= 0 {
+			return nil
+		}
+
+		chunk := rw.buf[:flushEnd]
+		redacted := rw.redactor.RedactString(string(chunk))
+		if _, err := rw.w.Write([]byte(redacted)); err != nil {
+			return err
+		}
+
+		copy(rw.buf, rw.buf[flushEnd:])
+		rw.buf = rw.buf[:len(rw.buf)-flushEnd]
 	}
 
-	// Try to split on a natural token delimiter
-	flushEnd := safeEnd
-	lastDelim := bytes.LastIndexAny(rw.buf[:safeEnd], "\r\n \t,;\"'=:")
-	if lastDelim >= 0 {
-		flushEnd = lastDelim + 1
-	} else if len(rw.buf) < rw.maxBuffer {
-		// No delimiter in safe window and not at max buffer: wait for delimiter
-		return nil
-	}
-
-	if flushEnd <= 0 {
-		return nil
-	}
-
-	redacted := rw.redactor.RedactString(string(rw.buf[:flushEnd]))
-	if _, err := rw.w.Write([]byte(redacted)); err != nil {
-		return err
-	}
-
-	copy(rw.buf, rw.buf[flushEnd:])
-	rw.buf = rw.buf[:len(rw.buf)-flushEnd]
 	return nil
 }
 

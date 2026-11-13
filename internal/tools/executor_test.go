@@ -83,6 +83,12 @@ func TestUnifiedToolExecutor(t *testing.T) {
 				Output: strings.Repeat("A", 1000),
 			}, nil
 		}
+		if p.Path == "/boundary_leak" {
+			// Secret "AKIAIOSFODNN7EXAMPLE" spans across byte offset 100 (starts at 95, ends at 115)
+			return &ExecutionResult{
+				Output: strings.Repeat("A", 94) + " " + "AKIAIOSFODNN7EXAMPLE",
+			}, nil
+		}
 		return &ExecutionResult{
 			Output: "contents of " + p.Path,
 		}, nil
@@ -196,6 +202,33 @@ func TestUnifiedToolExecutor(t *testing.T) {
 		}
 		if len(res.Output) != 100 {
 			t.Fatalf("expected output length 100, got %d", len(res.Output))
+		}
+	})
+
+	t.Run("Secret Spanning Truncation Boundary Redacted Before Truncation", func(t *testing.T) {
+		execCtx := ExecutionContext{
+			Actor:               "agent-1",
+			GrantedCapabilities: []string{"tools:fs:read"},
+			GrantedPermissions:  []string{"read"},
+			MaxOutputBytes:      100,
+		}
+		res, err := exec.Execute(context.Background(), execCtx, "fs_read", json.RawMessage(`{"path":"/boundary_leak"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Truncated {
+			t.Fatal("expected Truncated=true")
+		}
+		if len(res.Output) != 100 {
+			t.Fatalf("expected output length 100, got %d", len(res.Output))
+		}
+		// The 20-character AWS key "AKIAIOSFODNN7EXAMPLE" must NOT leak as a truncated prefix ("AKIAI")
+		if strings.Contains(res.Output, "AKIA") {
+			t.Fatalf("secret prefix leaked across truncation boundary: %s", res.Output)
+		}
+		// Verify redaction was applied before truncation: the start of [REDACTED] must be present
+		if !strings.Contains(res.Output, "[REDA") {
+			t.Fatalf("expected redacted prefix at boundary, got %s", res.Output)
 		}
 	})
 

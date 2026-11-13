@@ -189,16 +189,18 @@ func (e *UnifiedToolExecutor) Execute(ctx context.Context, execCtx ExecutionCont
 	res.ToolName = toolName
 	res.Duration = duration
 
-	// 9. Enforce output truncation
+	// 9. Automatic secret redaction (must occur before truncation to prevent token bisection)
+	if e.redactor != nil {
+		res.Output = e.redactor.RedactString(res.Output)
+		if res.Data != nil {
+			res.Data = e.redactor.RedactValue(res.Data)
+		}
+	}
+
+	// 10. Enforce output truncation
 	if maxOutput > 0 && int64(len(res.Output)) > maxOutput {
 		res.Output = res.Output[:maxOutput]
 		res.Truncated = true
-	}
-
-	// 10. Automatic secret redaction
-	res.Output = e.redactor.RedactString(res.Output)
-	if res.Data != nil {
-		res.Data = e.redactor.RedactValue(res.Data)
 	}
 
 	// 11. Tamper-evident audit logging (operational metadata ONLY)

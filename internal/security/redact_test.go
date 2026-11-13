@@ -330,3 +330,76 @@ func TestRedactingWriterConcurrent(t *testing.T) {
 		t.Fatalf("expected %d redacted tokens, got %d", workers*linesPerWorker, redactedCount)
 	}
 }
+
+func TestMultiplePEMLeak(t *testing.T) {
+	var buf bytes.Buffer
+	rw := NewRedactingWriter(&buf)
+	pem1Key := strings.Repeat("A1b2C3d4E5F6G7H8", 30)
+	pem1 := "-----BEGIN RSA PRIVATE KEY-----\n" + pem1Key + "\n-----END RSA PRIVATE KEY-----\n"
+	prefix := strings.Repeat("X", 600) + "\n"
+	pem2Large := "-----BEGIN RSA PRIVATE KEY-----\n" + strings.Repeat("Y", 650)
+
+	_, _ = rw.Write([]byte(prefix + pem1 + pem2Large))
+	_ = rw.Flush()
+	if strings.Contains(buf.String(), pem1Key) {
+		t.Fatalf("LEAK: PEM key leaked in output: %s", buf.String())
+	}
+}
+
+func TestURLBasicAuthDelimiterSplit(t *testing.T) {
+	var buf bytes.Buffer
+	rw := NewRedactingWriter(&buf)
+	urlPrefix := "https://alice:"
+	secretPass := "supersecretpassword123"
+	urlSuffix := "@github.com/repo"
+	fullURL := urlPrefix + secretPass + urlSuffix
+
+	prefix := strings.Repeat("A", 1000)
+	targetSafeEnd := len(prefix) + len(urlPrefix) + 8
+	neededTotal := targetSafeEnd + 1024
+	paddingAfter := strings.Repeat("Z", neededTotal-(len(prefix)+len(fullURL)))
+
+	_, _ = rw.Write([]byte(prefix + fullURL + paddingAfter))
+	_ = rw.Flush()
+	if strings.Contains(buf.String(), secretPass) {
+		t.Fatalf("LEAK: URL basic auth password leaked: %s", buf.String())
+	}
+}
+
+func TestAWSSecretDelimiterSplit(t *testing.T) {
+	var buf bytes.Buffer
+	rw := NewRedactingWriter(&buf)
+	prefix := strings.Repeat("A", 1000)
+	keyPrefix := `aws_secret_access_key="`
+	secretKey := "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+	fullKey := keyPrefix + secretKey + `"`
+
+	targetSafeEnd := len(prefix) + len(keyPrefix) + 10
+	neededTotal := targetSafeEnd + 1024
+	paddingAfter := strings.Repeat("Z", neededTotal-(len(prefix)+len(fullKey)))
+
+	_, _ = rw.Write([]byte(prefix + fullKey + paddingAfter))
+	_ = rw.Flush()
+	if strings.Contains(buf.String(), secretKey) {
+		t.Fatalf("LEAK: AWS secret key leaked: %s", buf.String())
+	}
+}
+
+func TestBearerTokenDelimiterSplit(t *testing.T) {
+	var buf bytes.Buffer
+	rw := NewRedactingWriter(&buf)
+	prefix := strings.Repeat("A", 1000)
+	tokenPrefix := "Bearer "
+	secretToken := "secretToken1234567890abcdef"
+	fullToken := tokenPrefix + secretToken
+
+	targetSafeEnd := len(prefix) + len(tokenPrefix) + 5
+	neededTotal := targetSafeEnd + 1024
+	paddingAfter := strings.Repeat("Z", neededTotal-(len(prefix)+len(fullToken)))
+
+	_, _ = rw.Write([]byte(prefix + fullToken + paddingAfter))
+	_ = rw.Flush()
+	if strings.Contains(buf.String(), secretToken) {
+		t.Fatalf("LEAK: Bearer token leaked: %s", buf.String())
+	}
+}
