@@ -405,6 +405,7 @@ func TestF03_ToolExecutor_ExecutionTimeout_Enforced(t *testing.T) {
 		ToolName: "terminal_exec",
 		Arguments: map[string]any{
 			"executable": "sleep",
+			"args":       []string{"3"},
 		},
 		GrantedCapabilities: []string{"tools:terminal", "*"},
 		TimeoutMS:           50, // 50ms timeout against 3s sleep
