@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/lovecode/lovecode/internal/tools/filesystem"
 )
 
 // Default filesystem limits
@@ -19,98 +21,20 @@ const (
 	MaxFileSizeWrite = 10 * 1024 * 1024 // 10MB
 )
 
-// Denied system paths that must never be read or written to
-var deniedSystemPrefixes = []string{
-	"/etc",
-	"/root",
-	"/sys",
-	"/proc",
-	"/dev",
-	"/boot",
-	"/sbin",
-	"/usr/sbin",
-}
-
 // CheckPathSecurity validates that a path is safe, does not escape via traversal or symlinks,
 // and does not point to sensitive system directories.
 func CheckPathSecurity(path string, allowedRoots []string) (string, error) {
-	if strings.TrimSpace(path) == "" {
-		return "", errors.New("path cannot be empty")
-	}
-
-	// Normalize
-	cleaned := filepath.Clean(path)
-	absPath, err := filepath.Abs(cleaned)
+	safePath, err := filesystem.CheckPathSecurity(path, allowedRoots)
 	if err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
-	}
-
-	// Check if path attempts path traversal targeting denied paths
-	lower := strings.ToLower(absPath)
-	for _, denied := range deniedSystemPrefixes {
-		if lower == denied || strings.HasPrefix(lower, denied+"/") {
-			return "", fmt.Errorf("%w: access to system directory %q is denied", ErrPermissionDenied, denied)
+		if errors.Is(err, filesystem.ErrPermissionDenied) {
+			return "", fmt.Errorf("%w: %v", ErrPermissionDenied, err)
 		}
-	}
-
-	// Check sensitive files (SSH keys, AWS credentials, env files)
-	base := strings.ToLower(filepath.Base(absPath))
-	if base == "id_rsa" || base == "id_ed25519" || base == "credentials" && strings.Contains(lower, ".aws") || base == ".env" && strings.Contains(lower, "/etc/") {
-		return "", fmt.Errorf("%w: access to credentials file is denied", ErrPermissionDenied)
-	}
-
-	// If the file exists, evaluate symlinks to detect escapes
-	if fi, err := os.Lstat(absPath); err == nil {
-		if fi.Mode()&os.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(absPath)
-			if err != nil {
-				return "", fmt.Errorf("eval symlink failed: %w", err)
-			}
-			targetClean := filepath.Clean(target)
-			targetLower := strings.ToLower(targetClean)
-			for _, denied := range deniedSystemPrefixes {
-				if targetLower == denied || strings.HasPrefix(targetLower, denied+"/") {
-					return "", fmt.Errorf("%w: symlink targets prohibited path %q", ErrPermissionDenied, denied)
-				}
-			}
-			if len(allowedRoots) > 0 {
-				escaped := true
-				for _, root := range allowedRoots {
-					cRoot, _ := filepath.EvalSymlinks(root)
-					if cRoot == "" {
-						cRoot = root
-					}
-					if targetClean == cRoot || strings.HasPrefix(targetClean, cRoot+string(filepath.Separator)) {
-						escaped = false
-						break
-					}
-				}
-				if escaped {
-					return "", fmt.Errorf("%w: symlink escapes allowed roots", ErrPermissionDenied)
-				}
-			}
+		if errors.Is(err, filesystem.ErrSchemaValidation) {
+			return "", fmt.Errorf("%w: %v", ErrSchemaValidation, err)
 		}
+		return "", err
 	}
-
-	// Check against explicit allowed roots if configured
-	if len(allowedRoots) > 0 {
-		withinRoot := false
-		for _, root := range allowedRoots {
-			cRoot, _ := filepath.EvalSymlinks(root)
-			if cRoot == "" {
-				cRoot = root
-			}
-			if absPath == cRoot || strings.HasPrefix(absPath, cRoot+string(filepath.Separator)) {
-				withinRoot = true
-				break
-			}
-		}
-		if !withinRoot {
-			return "", fmt.Errorf("%w: path %q outside allowed roots", ErrPermissionDenied, absPath)
-		}
-	}
-
-	return absPath, nil
+	return safePath, nil
 }
 
 // --- FS Read Tool ---
@@ -158,6 +82,9 @@ func (t *FSReadTool) Execute(ctx context.Context, execCtx ExecutionContext, args
 
 	info, err := os.Stat(safePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: file %s does not exist", ErrSchemaValidation, safePath)
+		}
 		return nil, err
 	}
 	if info.IsDir() {
@@ -322,6 +249,9 @@ func (t *FSListTool) Execute(ctx context.Context, execCtx ExecutionContext, args
 
 	entries, err := os.ReadDir(safePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: directory %s does not exist", ErrSchemaValidation, safePath)
+		}
 		return nil, err
 	}
 
@@ -404,6 +334,9 @@ func (t *FSStatTool) Execute(ctx context.Context, execCtx ExecutionContext, args
 
 	fi, err := os.Stat(safePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: target %s does not exist", ErrSchemaValidation, safePath)
+		}
 		return nil, err
 	}
 
@@ -470,10 +403,22 @@ func (t *FSDeleteTool) Execute(ctx context.Context, execCtx ExecutionContext, ar
 
 	fi, err := os.Stat(safePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: target %s does not exist", ErrSchemaValidation, safePath)
+		}
 		return nil, err
 	}
 	if fi.IsDir() {
 		return nil, fmt.Errorf("%w: deleting directories is not permitted via fs_delete", ErrPermissionDenied)
+	}
+	if safePath == "/" || safePath == "." {
+		return nil, fmt.Errorf("%w: cannot delete root directory", ErrPermissionDenied)
+	}
+	for _, root := range t.AllowedRoots {
+		cRoot, _ := filepath.EvalSymlinks(root)
+		if cRoot != "" && safePath == cRoot {
+			return nil, fmt.Errorf("%w: cannot delete root directory", ErrPermissionDenied)
+		}
 	}
 
 	if err := os.Remove(safePath); err != nil {

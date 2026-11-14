@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,7 +41,6 @@ func (t *TerminalTool) Definition() ToolDefinition {
 			"required": ["executable"]
 		}`),
 		RequiredCapabilities: []string{"tools:terminal"},
-		RequiredPermissions:  []string{"write"},
 		Enabled:              t.cfg.Enabled,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -62,6 +62,18 @@ func (t *TerminalTool) Execute(ctx context.Context, execCtx ExecutionContext, ar
 
 	combined, data, err := t.runner.Run(ctx, a.Executable, a.Args, a.WorkingDir, a.Env)
 	if err != nil {
+		if errors.Is(err, terminal.ErrPermissionDenied) {
+			return nil, fmt.Errorf("%w: %v", ErrPermissionDenied, err)
+		}
+		if errors.Is(err, terminal.ErrSchemaValidation) {
+			return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+		}
+		if errors.Is(err, terminal.ErrToolNotFound) {
+			return nil, fmt.Errorf("%w: %v", ErrToolNotFound, err)
+		}
+		if errors.Is(err, terminal.ErrExecutionTimeout) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, ErrExecutionTimeout
+		}
 		return nil, err
 	}
 

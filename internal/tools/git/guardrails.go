@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrDestructiveCommand = errors.New("destructive git operation blocked")
+	ErrPermissionDenied   = errors.New("permission denied")
 	ErrInvalidGitArgument = errors.New("invalid or dangerous git argument")
 	ErrNotAGitRepo        = errors.New("not a git repository")
 	ErrSchemaValidation   = errors.New("schema validation failed")
@@ -44,7 +45,7 @@ func ValidateGitArgs(subcommand string, args []string) error {
 		lower := strings.ToLower(strings.TrimSpace(arg))
 		for _, blocked := range blockedOptions {
 			if lower == blocked || strings.HasPrefix(lower, blocked+"=") {
-				return fmt.Errorf("%w: argument %q is prohibited", ErrDestructiveCommand, arg)
+				return fmt.Errorf("%w: argument %q is prohibited: %w", ErrPermissionDenied, arg, ErrDestructiveCommand)
 			}
 		}
 	}

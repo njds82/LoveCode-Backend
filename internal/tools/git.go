@@ -3,13 +3,28 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/lovecode/lovecode/internal/tools/filesystem"
 	"github.com/lovecode/lovecode/internal/tools/git"
 )
 
-// --- Git Status Tool ---
+func wrapGitErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, git.ErrPermissionDenied) || errors.Is(err, filesystem.ErrPermissionDenied) {
+		return fmt.Errorf("%w: %v", ErrPermissionDenied, err)
+	}
+	if errors.Is(err, git.ErrSchemaValidation) || errors.Is(err, filesystem.ErrSchemaValidation) {
+		return fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+	}
+	return err
+}
+
+// --- git_status ---
 
 type GitStatusTool struct {
 	tool *git.StatusTool
@@ -23,18 +38,17 @@ func (t *GitStatusTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		ID:          "git_status",
 		Name:        "git_status",
-		Description: "Show working tree status and branch divergence in a git repository.",
+		Description: "Show the working tree status of a git repository.",
 		Category:    CategoryGit,
-		RiskLevel:   RiskNone,
+		RiskLevel:   RiskLow,
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"repo_path": {"type": "string", "description": "Path to the git repository"},
-				"path": {"type": "string", "description": "Alias for repo_path"}
+				"repo_path": {"type": "string", "description": "Path to git repository"},
+				"path": {"type": "string", "description": "Alternative path to git repository"}
 			}
 		}`),
 		RequiredCapabilities: []string{"tools:git"},
-		RequiredPermissions:  []string{"read"},
 		Enabled:              true,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -48,13 +62,17 @@ type gitStatusArgs struct {
 
 func (t *GitStatusTool) Execute(ctx context.Context, execCtx ExecutionContext, args json.RawMessage) (*ExecutionResult, error) {
 	var a gitStatusArgs
-	if len(args) > 0 {
-		_ = json.Unmarshal(args, &a)
+	if len(args) > 0 && string(args) != "{}" {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+		}
 	}
+
 	out, res, err := t.tool.Status(ctx, a.RepoPath, a.Path)
 	if err != nil {
-		return nil, err
+		return nil, wrapGitErr(err)
 	}
+
 	return &ExecutionResult{
 		ToolName: "git_status",
 		Output:   out,
@@ -62,7 +80,7 @@ func (t *GitStatusTool) Execute(ctx context.Context, execCtx ExecutionContext, a
 	}, nil
 }
 
-// --- Git Diff Tool ---
+// --- git_diff ---
 
 type GitDiffTool struct {
 	tool *git.DiffTool
@@ -82,14 +100,14 @@ func (t *GitDiffTool) Definition() ToolDefinition {
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"repo_path": {"type": "string", "description": "Path to the git repository"},
-				"path": {"type": "string", "description": "Alias for repo_path"},
-				"staged": {"type": "boolean", "description": "Show staged changes (--staged/--cached)"},
-				"file": {"type": "string", "description": "Restrict diff to specific file"}
+				"repo_path": {"type": "string", "description": "Path to git repository"},
+				"path": {"type": "string", "description": "Alternative path to git repository"},
+				"staged": {"type": "boolean", "description": "Show staged diff"},
+				"target": {"type": "string", "description": "Target revision or branch"},
+				"file_path": {"type": "string", "description": "Optional file path filter"}
 			}
 		}`),
 		RequiredCapabilities: []string{"tools:git"},
-		RequiredPermissions:  []string{"read"},
 		Enabled:              true,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -100,25 +118,30 @@ type gitDiffArgs struct {
 	RepoPath string `json:"repo_path"`
 	Path     string `json:"path"`
 	Staged   bool   `json:"staged"`
-	File     string `json:"file"`
+	Target   string `json:"target"`
+	FilePath string `json:"file_path"`
 }
 
 func (t *GitDiffTool) Execute(ctx context.Context, execCtx ExecutionContext, args json.RawMessage) (*ExecutionResult, error) {
 	var a gitDiffArgs
-	if len(args) > 0 {
-		_ = json.Unmarshal(args, &a)
+	if len(args) > 0 && string(args) != "{}" {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+		}
 	}
-	out, err := t.tool.Diff(ctx, a.RepoPath, a.Path, a.Staged, a.File, "")
+
+	out, err := t.tool.Diff(ctx, a.RepoPath, a.Path, a.Staged, a.Target, a.FilePath)
 	if err != nil {
-		return nil, err
+		return nil, wrapGitErr(err)
 	}
+
 	return &ExecutionResult{
 		ToolName: "git_diff",
 		Output:   out,
 	}, nil
 }
 
-// --- Git Log Tool ---
+// --- git_log ---
 
 type GitLogTool struct {
 	tool *git.LogTool
@@ -132,20 +155,20 @@ func (t *GitLogTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		ID:          "git_log",
 		Name:        "git_log",
-		Description: "Show commit logs in a git repository.",
+		Description: "Show commit logs for a git repository.",
 		Category:    CategoryGit,
-		RiskLevel:   RiskNone,
+		RiskLevel:   RiskLow,
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"repo_path": {"type": "string", "description": "Path to the git repository"},
-				"path": {"type": "string", "description": "Alias for repo_path"},
-				"max_count": {"type": "integer", "description": "Maximum number of commits to list"},
-				"revision": {"type": "string", "description": "Revision range or commit reference"}
+				"repo_path": {"type": "string", "description": "Path to git repository"},
+				"path": {"type": "string", "description": "Alternative path to git repository"},
+				"limit": {"type": "integer", "description": "Number of commits to return (max 100)"},
+				"revision": {"type": "string", "description": "Revision range or commit"},
+				"file_path": {"type": "string", "description": "Optional file path filter"}
 			}
 		}`),
 		RequiredCapabilities: []string{"tools:git"},
-		RequiredPermissions:  []string{"read"},
 		Enabled:              true,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -155,27 +178,32 @@ func (t *GitLogTool) Definition() ToolDefinition {
 type gitLogArgs struct {
 	RepoPath string `json:"repo_path"`
 	Path     string `json:"path"`
-	MaxCount int    `json:"max_count"`
+	Limit    int    `json:"limit"`
 	Revision string `json:"revision"`
+	FilePath string `json:"file_path"`
 }
 
 func (t *GitLogTool) Execute(ctx context.Context, execCtx ExecutionContext, args json.RawMessage) (*ExecutionResult, error) {
 	var a gitLogArgs
-	if len(args) > 0 {
-		_ = json.Unmarshal(args, &a)
+	if len(args) > 0 && string(args) != "{}" {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+		}
 	}
-	out, entries, err := t.tool.Log(ctx, a.RepoPath, a.Path, a.MaxCount, 0, a.Revision, "")
+
+	out, commits, err := t.tool.Log(ctx, a.RepoPath, a.Path, a.Limit, a.Limit, a.Revision, a.FilePath)
 	if err != nil {
-		return nil, err
+		return nil, wrapGitErr(err)
 	}
+
 	return &ExecutionResult{
 		ToolName: "git_log",
 		Output:   out,
-		Data:     entries,
+		Data:     commits,
 	}, nil
 }
 
-// --- Git Branch Tool ---
+// --- git_branch ---
 
 type GitBranchTool struct {
 	tool *git.BranchTool
@@ -189,20 +217,20 @@ func (t *GitBranchTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		ID:          "git_branch",
 		Name:        "git_branch",
-		Description: "List or create branches in a git repository.",
+		Description: "List, create, or switch branches in a git repository.",
 		Category:    CategoryGit,
 		RiskLevel:   RiskLow,
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"repo_path": {"type": "string", "description": "Path to the git repository"},
-				"path": {"type": "string", "description": "Alias for repo_path"},
-				"action": {"type": "string", "enum": ["list", "create"], "description": "Operation to perform"},
-				"branch_name": {"type": "string", "description": "Branch name when action is create"}
+				"repo_path": {"type": "string", "description": "Path to git repository"},
+				"path": {"type": "string", "description": "Alternative path to git repository"},
+				"action": {"type": "string", "enum": ["list", "create", "switch"], "default": "list"},
+				"branch_name": {"type": "string", "description": "Branch name to create or switch to"},
+				"start_point": {"type": "string", "description": "Starting commit/branch for new branch"}
 			}
 		}`),
 		RequiredCapabilities: []string{"tools:git"},
-		RequiredPermissions:  []string{"read"},
 		Enabled:              true,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -214,28 +242,30 @@ type gitBranchArgs struct {
 	Path       string `json:"path"`
 	Action     string `json:"action"`
 	BranchName string `json:"branch_name"`
+	StartPoint string `json:"start_point"`
 }
 
 func (t *GitBranchTool) Execute(ctx context.Context, execCtx ExecutionContext, args json.RawMessage) (*ExecutionResult, error) {
 	var a gitBranchArgs
-	if len(args) > 0 {
-		_ = json.Unmarshal(args, &a)
+	if len(args) > 0 && string(args) != "{}" {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
+		}
 	}
-	if a.Action == "" {
-		a.Action = "list"
-	}
-	out, branches, err := t.tool.Branch(ctx, a.RepoPath, a.Path, a.Action, a.BranchName, "")
+
+	out, data, err := t.tool.Branch(ctx, a.RepoPath, a.Path, a.Action, a.BranchName, a.StartPoint)
 	if err != nil {
-		return nil, err
+		return nil, wrapGitErr(err)
 	}
+
 	return &ExecutionResult{
 		ToolName: "git_branch",
 		Output:   out,
-		Data:     branches,
+		Data:     data,
 	}, nil
 }
 
-// --- Git Commit Tool ---
+// --- git_commit ---
 
 type GitCommitTool struct {
 	tool *git.CommitTool
@@ -249,21 +279,23 @@ func (t *GitCommitTool) Definition() ToolDefinition {
 	return ToolDefinition{
 		ID:          "git_commit",
 		Name:        "git_commit",
-		Description: "Stage files and create a git commit with a message.",
+		Description: "Record changes to the repository with a commit message.",
 		Category:    CategoryGit,
 		RiskLevel:   RiskMedium,
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"repo_path": {"type": "string", "description": "Path to the git repository"},
-				"path": {"type": "string", "description": "Alias for repo_path"},
+				"repo_path": {"type": "string", "description": "Path to git repository"},
+				"path": {"type": "string", "description": "Alternative path to git repository"},
 				"message": {"type": "string", "description": "Commit message"},
-				"files": {"type": "array", "items": {"type": "string"}, "description": "Files to stage"}
+				"all": {"type": "boolean", "description": "Stage all changes before commit"},
+				"files": {"type": "array", "items": {"type": "string"}, "description": "Specific files to stage"},
+				"author_name": {"type": "string", "description": "Author name"},
+				"author_email": {"type": "string", "description": "Author email"}
 			},
 			"required": ["message"]
 		}`),
-		RequiredCapabilities: []string{"tools:git:commit"},
-		RequiredPermissions:  []string{"write"},
+		RequiredCapabilities: []string{"tools:git"},
 		Enabled:              true,
 		CreatedAt:            time.Now().UTC(),
 		UpdatedAt:            time.Now().UTC(),
@@ -271,10 +303,13 @@ func (t *GitCommitTool) Definition() ToolDefinition {
 }
 
 type gitCommitArgs struct {
-	RepoPath string   `json:"repo_path"`
-	Path     string   `json:"path"`
-	Message  string   `json:"message"`
-	Files    []string `json:"files"`
+	RepoPath    string   `json:"repo_path"`
+	Path        string   `json:"path"`
+	Message     string   `json:"message"`
+	All         bool     `json:"all"`
+	Files       []string `json:"files"`
+	AuthorName  string   `json:"author_name"`
+	AuthorEmail string   `json:"author_email"`
 }
 
 func (t *GitCommitTool) Execute(ctx context.Context, execCtx ExecutionContext, args json.RawMessage) (*ExecutionResult, error) {
@@ -282,10 +317,12 @@ func (t *GitCommitTool) Execute(ctx context.Context, execCtx ExecutionContext, a
 	if err := json.Unmarshal(args, &a); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSchemaValidation, err)
 	}
-	out, err := t.tool.Commit(ctx, a.RepoPath, a.Path, a.Message, false, a.Files, "", "")
+
+	out, err := t.tool.Commit(ctx, a.RepoPath, a.Path, a.Message, a.All, a.Files, a.AuthorName, a.AuthorEmail)
 	if err != nil {
-		return nil, err
+		return nil, wrapGitErr(err)
 	}
+
 	return &ExecutionResult{
 		ToolName: "git_commit",
 		Output:   out,

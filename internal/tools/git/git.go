@@ -16,13 +16,8 @@ type Config struct {
 
 // DefaultConfig returns git configuration default boundaries.
 func DefaultConfig() Config {
-	cwd, _ := os.Getwd()
-	roots := []string{}
-	if cwd != "" {
-		roots = append(roots, cwd)
-	}
 	return Config{
-		AllowedRoots: roots,
+		AllowedRoots: nil,
 	}
 }
 

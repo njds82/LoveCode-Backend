@@ -3,6 +3,7 @@ package filesystem
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,7 +58,24 @@ func CheckPathSecurity(path string, allowedRoots []string) (string, error) {
 		return "", fmt.Errorf("%w: path cannot be empty", ErrSchemaValidation)
 	}
 
+	// URL decode to catch %2e%2e and %2f
+	if strings.Contains(path, "%") {
+		if unescaped, err := url.PathUnescape(path); err == nil {
+			path = unescaped
+		}
+	}
+
 	cleaned := filepath.Clean(path)
+	slashCleaned := filepath.ToSlash(cleaned)
+
+	// Check if relative traversal path targets prohibited system prefixes
+	for _, denied := range deniedSystemPrefixes {
+		deniedRel := strings.TrimPrefix(denied, "/")
+		if strings.HasPrefix(slashCleaned, deniedRel+"/") || strings.Contains(slashCleaned, "/"+deniedRel+"/") || strings.Contains(slashCleaned, "/"+deniedRel) {
+			return "", fmt.Errorf("%w: access to system directory %q is denied", ErrPermissionDenied, denied)
+		}
+	}
+
 	absPath, err := filepath.Abs(cleaned)
 	if err != nil {
 		return "", fmt.Errorf("%w: invalid path %q: %v", ErrSchemaValidation, path, err)

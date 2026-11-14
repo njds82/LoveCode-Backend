@@ -2,6 +2,7 @@ package process
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,12 @@ import (
 	"strings"
 
 	"github.com/lovecode/lovecode/internal/security"
-	"github.com/lovecode/lovecode/internal/tools"
+)
+
+var (
+	ErrSchemaValidation = errors.New("schema validation failed")
+	ErrPermissionDenied = errors.New("permission denied")
+	ErrToolNotFound     = errors.New("tool not found")
 )
 
 type ProcessInfo struct {
@@ -63,12 +69,12 @@ func (insp *LinuxProcInspector) ListProcesses() ([]ProcessInfo, error) {
 
 func (insp *LinuxProcInspector) GetProcess(pid int) (*ProcessInfo, error) {
 	if pid <= 0 {
-		return nil, fmt.Errorf("%w: invalid PID %d", tools.ErrSchemaValidation, pid)
+		return nil, fmt.Errorf("%w: invalid PID %d", ErrSchemaValidation, pid)
 	}
 	pageSize := int64(os.Getpagesize())
 	pInfo, err := insp.readProcess(pid, pageSize)
 	if err != nil {
-		return nil, fmt.Errorf("%w: process with PID %d not found: %v", tools.ErrToolNotFound, pid, err)
+		return nil, fmt.Errorf("%w: process with PID %d not found: %v", ErrToolNotFound, pid, err)
 	}
 	return pInfo, nil
 }
@@ -104,7 +110,6 @@ func (insp *LinuxProcInspector) readProcess(pid int, pageSize int64) (*ProcessIn
 		ppid, _ = strconv.Atoi(fields[1])
 	}
 	if len(fields) >= 22 {
-		// Field 24 in stat (index 21 after state & ppid: state is idx 0, ppid idx 1 ... rss is idx 21)
 		rssPages, _ := strconv.ParseInt(fields[21], 10, 64)
 		rssBytes = rssPages * pageSize
 	}

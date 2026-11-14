@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"syscall"
-
-	"github.com/lovecode/lovecode/internal/tools"
 )
 
 var (
@@ -54,25 +52,25 @@ func ParseSignal(sigStr string) (syscall.Signal, error) {
 	if sig, ok := allowedSignals[upper]; ok {
 		return sig, nil
 	}
-	return 0, fmt.Errorf("%w: signal %q is not permitted (allowed: SIGTERM, SIGKILL, SIGINT, SIGHUP, SIGQUIT)", tools.ErrSchemaValidation, sigStr)
+	return 0, fmt.Errorf("%w: signal %q is not permitted (allowed: SIGTERM, SIGKILL, SIGINT, SIGHUP, SIGQUIT)", ErrSchemaValidation, sigStr)
 }
 
 // ValidateKillTarget checks PID and daemon immunity before allowing termination.
 func ValidateKillTarget(pid int, inspector ProcessInspector) (*ProcessInfo, error) {
 	if pid <= 0 {
-		return nil, fmt.Errorf("%w: PID must be a positive integer (got %d)", tools.ErrSchemaValidation, pid)
+		return nil, fmt.Errorf("%w: PID must be a positive integer (got %d)", ErrSchemaValidation, pid)
 	}
 	if pid == 1 {
-		return nil, fmt.Errorf("%w: PID 1 (init/systemd) cannot be terminated", tools.ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: PID 1 (init/systemd) cannot be terminated", ErrPermissionDenied)
 	}
 	if pid == os.Getpid() {
-		return nil, fmt.Errorf("%w: LoveCode server PID (%d) cannot terminate itself", tools.ErrPermissionDenied, pid)
+		return nil, fmt.Errorf("%w: LoveCode server PID (%d) cannot terminate itself", ErrPermissionDenied, pid)
 	}
 	if pid == os.Getppid() {
-		return nil, fmt.Errorf("%w: parent process PID (%d) cannot be terminated", tools.ErrPermissionDenied, pid)
+		return nil, fmt.Errorf("%w: parent process PID (%d) cannot be terminated", ErrPermissionDenied, pid)
 	}
 	if pid == 2 {
-		return nil, fmt.Errorf("%w: PID 2 (kthreadd) cannot be terminated", tools.ErrPermissionDenied)
+		return nil, fmt.Errorf("%w: PID 2 (kthreadd) cannot be terminated", ErrPermissionDenied)
 	}
 
 	if inspector != nil {
@@ -81,11 +79,11 @@ func ValidateKillTarget(pid int, inspector ProcessInspector) (*ProcessInfo, erro
 			return nil, err
 		}
 		if p.PPID == 2 {
-			return nil, fmt.Errorf("%w: kernel thread cannot be terminated", tools.ErrPermissionDenied)
+			return nil, fmt.Errorf("%w: kernel thread cannot be terminated", ErrPermissionDenied)
 		}
 		norm := strings.ToLower(p.Name)
 		if ProtectedDaemons[norm] {
-			return nil, fmt.Errorf("%w: critical system daemon %q cannot be terminated", tools.ErrPermissionDenied, p.Name)
+			return nil, fmt.Errorf("%w: critical system daemon %q cannot be terminated", ErrPermissionDenied, p.Name)
 		}
 		return p, nil
 	}

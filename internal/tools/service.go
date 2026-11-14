@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/lovecode/lovecode/internal/core"
+	"github.com/lovecode/lovecode/internal/tools/git"
+	"github.com/lovecode/lovecode/internal/tools/terminal"
 )
 
 // Service integrates tools registry, executor, and persistence into the LoveCode modular runtime.
@@ -23,12 +25,49 @@ func NewService(store *Store, auditLog AuditRecorder, log *slog.Logger) *Service
 	reg := NewToolRegistry()
 	exec := NewUnifiedToolExecutor(reg, auditLog)
 
-	return &Service{
+	s := &Service{
 		store:    store,
 		registry: reg,
 		executor: exec,
 		log:      log,
 	}
+
+	s.registerBuiltinTools()
+
+	return s
+}
+
+// registerBuiltinTools registers all 15 host system tools across the 6 Milestone 2 feature domains.
+func (s *Service) registerBuiltinTools() {
+	// 1. Filesystem Tools (Feature 8)
+	_ = s.registry.RegisterTool(&FSReadTool{})
+	_ = s.registry.RegisterTool(&FSWriteTool{})
+	_ = s.registry.RegisterTool(&FSListTool{})
+	_ = s.registry.RegisterTool(&FSStatTool{})
+	_ = s.registry.RegisterTool(&FSDeleteTool{})
+
+	// 2. Structured Terminal Tool (Feature 9)
+	termCfg := terminal.DefaultConfig()
+	termCfg.Enabled = true // Enabled for service runtime; configurable/overridable via store
+	_ = s.registry.RegisterTool(NewTerminalTool(termCfg))
+
+	// 3. Scoped Git Tools (Feature 10)
+	gitCfg := git.DefaultConfig()
+	_ = s.registry.RegisterTool(NewGitStatusTool(gitCfg))
+	_ = s.registry.RegisterTool(NewGitDiffTool(gitCfg))
+	_ = s.registry.RegisterTool(NewGitLogTool(gitCfg))
+	_ = s.registry.RegisterTool(NewGitBranchTool(gitCfg))
+	_ = s.registry.RegisterTool(NewGitCommitTool(gitCfg))
+
+	// 4. Read-Only System Info Tool (Feature 11)
+	_ = s.registry.RegisterTool(NewSysinfoTool())
+
+	// 5. Controlled Process Tools (Feature 12)
+	_ = s.registry.RegisterTool(NewProcessListTool(nil))
+	_ = s.registry.RegisterTool(NewProcessKillTool(nil))
+
+	// 6. Restricted Network Tool (Feature 13)
+	_ = s.registry.RegisterTool(NewHTTPRequestTool())
 }
 
 // Name identifies the module in core.Runtime.
