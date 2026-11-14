@@ -46,6 +46,7 @@ type MockDeviceNode struct {
 	Token        string
 	TLSServer    net.Listener
 	TLSAddr      string
+	activeConns  map[net.Conn]struct{}
 	mu           sync.Mutex
 	closed       bool
 	Executions   []DeviceExecutionRecord
@@ -66,6 +67,7 @@ func NewMockDeviceNode(deviceID, hostname, platform, arch string, capabilities [
 		Platform:     platform,
 		Arch:         arch,
 		Capabilities: capabilities,
+		activeConns:  make(map[net.Conn]struct{}),
 	}
 }
 
@@ -137,6 +139,15 @@ func (d *MockDeviceNode) StartTLSDaemon(t testing.TB) string {
 			if err != nil {
 				return
 			}
+			d.mu.Lock()
+			if d.closed {
+				d.mu.Unlock()
+				_ = conn.Close()
+				return
+			}
+			d.activeConns[conn] = struct{}{}
+			d.mu.Unlock()
+
 			go d.handleTLSConn(conn)
 		}
 	}()
@@ -149,7 +160,12 @@ func (d *MockDeviceNode) StartTLSDaemon(t testing.TB) string {
 }
 
 func (d *MockDeviceNode) handleTLSConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		d.mu.Lock()
+		delete(d.activeConns, conn)
+		d.mu.Unlock()
+		_ = conn.Close()
+	}()
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
 
@@ -196,17 +212,22 @@ func (d *MockDeviceNode) handleTLSConn(conn net.Conn) {
 	}
 }
 
-// Close stops the TLS daemon.
+// Close stops the TLS daemon and closes all active client connections.
 func (d *MockDeviceNode) Close() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.closed {
+		d.mu.Unlock()
 		return
 	}
 	d.closed = true
 	if d.TLSServer != nil {
 		_ = d.TLSServer.Close()
 	}
+	for conn := range d.activeConns {
+		_ = conn.Close()
+	}
+	d.activeConns = make(map[net.Conn]struct{})
+	d.mu.Unlock()
 }
 
 func generateSelfSignedCert() (tls.Certificate, error) {

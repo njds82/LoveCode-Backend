@@ -29,9 +29,10 @@ func TestF10_Git_Status_CleanAndModified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F10: Git Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		t.Logf("git_status output: %s", execResp.Output)
 	}
 }
@@ -59,9 +60,10 @@ func TestF10_Git_Diff_WorkingTreeChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F10: Git Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		t.Logf("git_diff output: %s", execResp.Output)
 	}
 }
@@ -87,9 +89,10 @@ func TestF10_Git_Log_CommitHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F10: Git Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		t.Logf("git_log output: %s", execResp.Output)
 	}
 }
@@ -116,7 +119,8 @@ func TestF10_Git_Branch_ListAndCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F10: Git Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, reqList.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
 	// Create branch
 	reqCreate := harness.ToolExecuteRequest{
@@ -133,9 +137,8 @@ func TestF10_Git_Branch_ListAndCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute create branch failed: %v", err)
 	}
-	if respCreate.StatusCode != http.StatusOK && respCreate.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected branch create status: %d", respCreate.StatusCode)
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, respCreate, reqCreate.ToolName)
+	srv.WriteClient().AssertStatus(t, respCreate, http.StatusOK)
 }
 
 func TestF10_Git_Commit_StagedChanges(t *testing.T) {
@@ -163,9 +166,10 @@ func TestF10_Git_Commit_StagedChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F10: Git Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		t.Logf("git_commit output: %s", execResp.Output)
 	}
 }

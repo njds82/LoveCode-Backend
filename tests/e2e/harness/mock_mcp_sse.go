@@ -59,8 +59,10 @@ func NewMockMCPSSEServer(t testing.TB) *MockMCPSSEServer {
 
 		defer func() {
 			s.mu.Lock()
-			delete(s.sseChans, msgChan)
-			close(msgChan)
+			if _, ok := s.sseChans[msgChan]; ok {
+				delete(s.sseChans, msgChan)
+				close(msgChan)
+			}
 			s.mu.Unlock()
 		}()
 
@@ -215,11 +217,18 @@ func (s *MockMCPSSEServer) handleRPC(req JSONRPCRequest) JSONRPCResponse {
 // Close stops the mock SSE server.
 func (s *MockMCPSSEServer) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return
 	}
 	s.closed = true
+	// Drain and close all active SSE streaming channels so client connections release immediately
+	for ch := range s.sseChans {
+		close(ch)
+	}
+	s.sseChans = make(map[chan string]struct{})
+	s.mu.Unlock()
+
 	if s.Server != nil {
 		s.Server.Close()
 	}

@@ -26,7 +26,7 @@ func TestBoundaries_FS_DirectoryTraversal_RelativeEscape(t *testing.T) {
 	traversalPaths := []string{
 		"../../../etc/passwd",
 		"../../../../etc/shadow",
-		sb.Path("sub/../../../../etc/hosts"),
+		sb.PathUnsafe("sub/../../../../etc/hosts"),
 		"../" + filepath.Base(sb.Root()) + "/../etc/passwd",
 		"..%2f..%2f..%2fetc%2fpasswd",
 	}

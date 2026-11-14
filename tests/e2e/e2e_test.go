@@ -25,17 +25,19 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir for binary: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmpDir)
 
 	bin := filepath.Join(tmpDir, "lovecode")
 	buildCmd := exec.Command("go", "build", "-o", bin, "../../cmd/lovecode")
 	if out, err := buildCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to build lovecode binary: %v\noutput: %s\n", err, string(out))
+		_ = os.RemoveAll(tmpDir)
 		os.Exit(1)
 	}
 
 	binaryPath = bin
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
 func TestCLI_VersionFlag(t *testing.T) {

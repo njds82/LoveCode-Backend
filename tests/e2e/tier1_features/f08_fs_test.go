@@ -30,12 +30,11 @@ func TestF08_FS_Read_WithinAllowedRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
-		if execResp.Output != "hello lovecode filesystem" {
-			t.Errorf("expected file content, got: %q", execResp.Output)
-		}
+	if execResp == nil || execResp.Output != "hello lovecode filesystem" {
+		t.Errorf("expected file content %q, got: %v", "hello lovecode filesystem", execResp)
 	}
 }
 
@@ -61,11 +60,9 @@ func TestF08_FS_Write_AtomicWrite_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
-
-	if resp.StatusCode == http.StatusOK {
-		sb.AssertFileEquals(t, "written.txt", "atomic write payload")
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
+	sb.AssertFileEquals(t, "written.txt", "atomic write payload")
 }
 
 func TestF08_FS_List_DirectoryContents(t *testing.T) {
@@ -90,11 +87,8 @@ func TestF08_FS_List_DirectoryContents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 }
 
 func TestF08_FS_Stat_FileMetadata(t *testing.T) {
@@ -117,11 +111,8 @@ func TestF08_FS_Stat_FileMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected status: %d", resp.StatusCode)
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 }
 
 func TestF08_FS_Delete_RemovesFile(t *testing.T) {
@@ -144,11 +135,9 @@ func TestF08_FS_Delete_RemovesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
-
-	if resp.StatusCode == http.StatusOK {
-		sb.AssertFileNotExists(t, "to_delete.txt")
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
+	sb.AssertFileNotExists(t, "to_delete.txt")
 }
 
 func TestF08_FS_PathTraversal_Rejected(t *testing.T) {
@@ -173,10 +162,10 @@ func TestF08_FS_PathTraversal_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F8: Filesystem Tools")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
 
 	// Must be blocked with 403 Forbidden or 400 Bad Request
-	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 403 or 400 for path traversal, got %d: %s", resp.StatusCode, resp.String())
 	}
 }

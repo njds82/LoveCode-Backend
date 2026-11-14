@@ -25,9 +25,10 @@ func TestF11_Sysinfo_ReportsOSAndArch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F11: Sysinfo Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		t.Logf("sysinfo output: %s", execResp.Output)
 	}
 }
@@ -47,13 +48,12 @@ func TestF11_Sysinfo_ReportsCPUAndMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F11: Sysinfo Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
-		// Output or data should report system stats
-		if execResp.Output == "" && execResp.Data == nil {
-			t.Errorf("expected non-empty sysinfo output or data")
-		}
+	// Output or data should report system stats
+	if execResp == nil || (execResp.Output == "" && execResp.Data == nil) {
+		t.Errorf("expected non-empty sysinfo output or data, got: %v", execResp)
 	}
 }
 
@@ -72,11 +72,8 @@ func TestF11_Sysinfo_ReportsDiskSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F11: Sysinfo Tool")
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected sysinfo status: %d", resp.StatusCode)
-	}
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 }
 
 func TestF11_Sysinfo_NoSecretLeaks(t *testing.T) {
@@ -94,9 +91,10 @@ func TestF11_Sysinfo_NoSecretLeaks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F11: Sysinfo Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		output := execResp.Output
 		for _, token := range []string{srv.AdminToken, srv.WriteToken, srv.ReadToken} {
 			if token != "" && strings.Contains(output, token) {
@@ -121,9 +119,10 @@ func TestF11_Sysinfo_NoUserAccountEnumeration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
-	srv.WriteClient().SkipIfUnregistered(t, resp, "F11: Sysinfo Tool")
+	srv.WriteClient().SkipIfToolNotFound(t, resp, req.ToolName)
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
+	if execResp != nil {
 		output := execResp.Output
 		// Should not dump /etc/shadow or /etc/passwd contents
 		if strings.Contains(output, "root:x:") || strings.Contains(output, "/bin/bash") && strings.Contains(output, ":0:0:") {

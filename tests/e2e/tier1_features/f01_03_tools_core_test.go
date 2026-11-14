@@ -2,18 +2,109 @@ package tier1_features
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/lovecode/lovecode/internal/tools"
 	"github.com/lovecode/lovecode/tests/e2e/harness"
 )
+
+func registerCoreTools(srv *harness.Server) {
+	if srv == nil || srv.Tools == nil {
+		return
+	}
+	reg := srv.Tools.Registry()
+
+	_ = reg.RegisterTool(tools.WrapHandler(tools.ToolDefinition{
+		ID:                   "fs_read",
+		Name:                 "fs_read",
+		Description:          "Read file content",
+		Category:             tools.CategoryFilesystem,
+		RiskLevel:            tools.RiskMedium,
+		RequiredCapabilities: []string{"tools:filesystem:read"},
+		RequiredPermissions:  []string{"read"},
+		ParametersSchema: json.RawMessage(`{
+			"type": "object",
+			"required": ["path"],
+			"properties": {
+				"path": { "type": "string" }
+			}
+		}`),
+		Enabled: true,
+	}, func(ctx context.Context, execCtx tools.ExecutionContext, args json.RawMessage) (*tools.ExecutionResult, error) {
+		var p struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal(args, &p)
+		return &tools.ExecutionResult{
+			ToolName: "fs_read",
+			Output:   "content of " + p.Path,
+		}, nil
+	}))
+
+	_ = reg.RegisterTool(tools.WrapHandler(tools.ToolDefinition{
+		ID:                   "sysinfo",
+		Name:                 "sysinfo",
+		Description:          "System information",
+		Category:             tools.CategorySystem,
+		RiskLevel:            tools.RiskLow,
+		RequiredCapabilities: []string{"tools:sysinfo"},
+		RequiredPermissions:  []string{"read"},
+		ParametersSchema:     json.RawMessage(`{"type": "object"}`),
+		Enabled:              true,
+	}, func(ctx context.Context, execCtx tools.ExecutionContext, args json.RawMessage) (*tools.ExecutionResult, error) {
+		return &tools.ExecutionResult{
+			ToolName: "sysinfo",
+			Output:   "os=linux arch=amd64 uptime=3600s cpu=4 mem=8GB disk=100GB",
+			Data: map[string]any{
+				"os":   "linux",
+				"arch": "amd64",
+			},
+		}, nil
+	}))
+
+	_ = reg.RegisterTool(tools.WrapHandler(tools.ToolDefinition{
+		ID:                   "terminal_exec",
+		Name:                 "terminal_exec",
+		Description:          "Terminal execution",
+		Category:             tools.CategorySystem,
+		RiskLevel:            tools.RiskHigh,
+		RequiredCapabilities: []string{"tools:terminal"},
+		RequiredPermissions:  []string{"execute"},
+		ParametersSchema: json.RawMessage(`{
+			"type": "object",
+			"required": ["executable"],
+			"properties": {
+				"executable": { "type": "string" },
+				"args": { "type": "array", "items": { "type": "string" } }
+			}
+		}`),
+		Enabled: true,
+	}, func(ctx context.Context, execCtx tools.ExecutionContext, args json.RawMessage) (*tools.ExecutionResult, error) {
+		var p struct {
+			Executable string `json:"executable"`
+		}
+		_ = json.Unmarshal(args, &p)
+		if p.Executable == "sleep" {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(3 * time.Second):
+				return &tools.ExecutionResult{ToolName: "terminal_exec", Output: "slept"}, nil
+			}
+		}
+		return &tools.ExecutionResult{ToolName: "terminal_exec", Output: "executed " + p.Executable}, nil
+	}))
+}
 
 // --- Feature 1: Tool Definitions & Schema ---
 
 func TestF01_ToolSchema_StructureAndProperties(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -24,6 +115,10 @@ func TestF01_ToolSchema_StructureAndProperties(t *testing.T) {
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F1: Tool Definitions")
 	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
+
+	if len(tools) == 0 {
+		t.Fatal("expected registered tools in tool definitions response, got empty list")
+	}
 
 	for _, tool := range tools {
 		if tool.ID == "" {
@@ -40,6 +135,7 @@ func TestF01_ToolSchema_StructureAndProperties(t *testing.T) {
 
 func TestF01_ToolSchema_RiskClassificationLevels(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -50,6 +146,10 @@ func TestF01_ToolSchema_RiskClassificationLevels(t *testing.T) {
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F1: Tool Definitions")
 	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
+
+	if len(tools) == 0 {
+		t.Fatal("expected registered tools in response, got empty list")
+	}
 
 	validRisks := map[string]bool{
 		"":         true,
@@ -68,6 +168,7 @@ func TestF01_ToolSchema_RiskClassificationLevels(t *testing.T) {
 
 func TestF01_ToolSchema_ValidParametersValidation(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -81,17 +182,16 @@ func TestF01_ToolSchema_ValidParametersValidation(t *testing.T) {
 		t.Fatalf("execute tool failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F1: Schema Validation")
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("unexpected status %d, body: %s", resp.StatusCode, resp.String())
-	}
-	if resp.StatusCode == http.StatusOK && execResp == nil {
+	if execResp == nil {
 		t.Fatal("expected non-nil ExecutionResult on 200 OK")
 	}
 }
 
 func TestF01_ToolSchema_MissingRequiredParameters(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -107,14 +207,15 @@ func TestF01_ToolSchema_MissingRequiredParameters(t *testing.T) {
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F1: Schema Validation")
 
-	// If fs_read is registered, missing required "path" must return 400 Bad Request
-	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
+	// Missing required "path" must return 400 Bad Request
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for missing required argument, got %d: %s", resp.StatusCode, resp.String())
 	}
 }
 
 func TestF01_ToolSchema_TypeMismatch(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -132,7 +233,7 @@ func TestF01_ToolSchema_TypeMismatch(t *testing.T) {
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F1: Schema Type Mismatch")
 
-	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusNotFound {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for type mismatch, got %d: %s", resp.StatusCode, resp.String())
 	}
 }

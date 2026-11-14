@@ -3,6 +3,7 @@ package harness
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,8 +39,21 @@ func (s *Sandbox) Root() string {
 	return s.root
 }
 
-// Path returns an absolute path joined with the sandbox root.
+// Path returns an absolute path joined with the sandbox root, verifying
+// that it does not escape the sandbox root directory.
 func (s *Sandbox) Path(relParts ...string) string {
+	joined := filepath.Join(append([]string{s.root}, relParts...)...)
+	cleaned := filepath.Clean(joined)
+	rel, err := filepath.Rel(s.root, cleaned)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		panic(fmt.Sprintf("Sandbox.Path: path escape detected: %s outside root %s", cleaned, s.root))
+	}
+	return cleaned
+}
+
+// PathUnsafe returns an absolute joined path without containment validation,
+// intended strictly for constructing adversarial path traversal test inputs.
+func (s *Sandbox) PathUnsafe(relParts ...string) string {
 	parts := append([]string{s.root}, relParts...)
 	return filepath.Join(parts...)
 }
@@ -58,10 +72,19 @@ func (s *Sandbox) WriteFile(t testing.TB, relPath string, content []byte) string
 }
 
 // ReadFile reads a file at the given relative path and returns its content as string.
+// It verifies that any resolved symbolic links remain strictly contained within the sandbox root.
 func (s *Sandbox) ReadFile(t testing.TB, relPath string) string {
 	t.Helper()
 	fullPath := s.Path(relPath)
-	data, err := os.ReadFile(fullPath)
+	resolved, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		t.Fatalf("Sandbox.ReadFile: read file failed: %v", err)
+	}
+	rel, err := filepath.Rel(s.root, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("Sandbox.ReadFile: symlink escapes sandbox root: %s -> %s (outside %s)", fullPath, resolved, s.root)
+	}
+	data, err := os.ReadFile(resolved)
 	if err != nil {
 		t.Fatalf("Sandbox.ReadFile: read file failed: %v", err)
 	}
