@@ -64,6 +64,8 @@ type ToolExecuteRequest struct {
 	AgentID             string   `json:"agent_id,omitempty"`
 	TeamID              string   `json:"team_id,omitempty"`
 	GrantedCapabilities []string `json:"granted_capabilities,omitempty"`
+	Capabilities        []string `json:"capabilities,omitempty"`
+	Permissions         []string `json:"permissions,omitempty"`
 	TimeoutMS           int64    `json:"timeout_ms,omitempty"`
 	MaxOutputBytes      int64    `json:"max_output_bytes,omitempty"`
 }
@@ -273,6 +275,12 @@ func (c *Client) SkipIfToolNotFound(t testing.TB, resp *Response, toolName strin
 
 // ExecuteTool calls POST /v1/tools/execute and returns decoded ToolExecuteResponse.
 func (c *Client) ExecuteTool(ctx context.Context, req ToolExecuteRequest) (*ToolExecuteResponse, *Response, error) {
+	if len(req.Capabilities) == 0 && len(req.GrantedCapabilities) > 0 {
+		req.Capabilities = req.GrantedCapabilities
+	}
+	if len(req.Permissions) == 0 {
+		req.Permissions = []string{"*"}
+	}
 	resp, err := c.Post(ctx, "/v1/tools/execute", req)
 	if err != nil {
 		return nil, nil, err

@@ -250,10 +250,22 @@ func (e *UnifiedToolExecutor) recordAudit(ctx context.Context, execCtx Execution
 	})
 }
 
+func normalizeCap(c string) string {
+	c = strings.ToLower(strings.TrimSpace(c))
+	c = strings.TrimPrefix(c, "tools:")
+	if strings.HasPrefix(c, "filesystem:") {
+		c = "fs:" + strings.TrimPrefix(c, "filesystem:")
+	}
+	if c == "filesystem" {
+		c = "fs"
+	}
+	return c
+}
+
 func matchScoped(required string, granted []string) bool {
-	reqNorm := strings.ToLower(required)
+	reqNorm := normalizeCap(required)
 	for _, g := range granted {
-		gNorm := strings.ToLower(g)
+		gNorm := normalizeCap(g)
 		if gNorm == "*" || gNorm == "admin" {
 			return true
 		}
@@ -271,6 +283,12 @@ func matchScoped(required string, granted []string) bool {
 			if strings.HasPrefix(reqNorm, prefix) {
 				return true
 			}
+		}
+		if strings.HasPrefix(reqNorm, gNorm+":") {
+			return true
+		}
+		if strings.HasPrefix(gNorm, reqNorm+":") {
+			return true
 		}
 	}
 	return false

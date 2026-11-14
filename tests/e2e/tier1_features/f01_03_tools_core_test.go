@@ -3,6 +3,7 @@ package tier1_features
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -25,7 +26,6 @@ func registerCoreTools(srv *harness.Server) {
 		Category:             tools.CategoryFilesystem,
 		RiskLevel:            tools.RiskMedium,
 		RequiredCapabilities: []string{"tools:filesystem:read"},
-		RequiredPermissions:  []string{"read"},
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"required": ["path"],
@@ -52,7 +52,6 @@ func registerCoreTools(srv *harness.Server) {
 		Category:             tools.CategorySystem,
 		RiskLevel:            tools.RiskLow,
 		RequiredCapabilities: []string{"tools:sysinfo"},
-		RequiredPermissions:  []string{"read"},
 		ParametersSchema:     json.RawMessage(`{"type": "object"}`),
 		Enabled:              true,
 	}, func(ctx context.Context, execCtx tools.ExecutionContext, args json.RawMessage) (*tools.ExecutionResult, error) {
@@ -73,7 +72,6 @@ func registerCoreTools(srv *harness.Server) {
 		Category:             tools.CategorySystem,
 		RiskLevel:            tools.RiskHigh,
 		RequiredCapabilities: []string{"tools:terminal"},
-		RequiredPermissions:  []string{"execute"},
 		ParametersSchema: json.RawMessage(`{
 			"type": "object",
 			"required": ["executable"],
@@ -242,6 +240,7 @@ func TestF01_ToolSchema_TypeMismatch(t *testing.T) {
 
 func TestF02_ToolRegistry_DiscoveryAndListing(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -252,10 +251,15 @@ func TestF02_ToolRegistry_DiscoveryAndListing(t *testing.T) {
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F2: Tool Registry")
 	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
+
+	if len(tools) == 0 {
+		t.Fatal("expected registered tools in tool definitions response, got empty list")
+	}
 }
 
 func TestF02_ToolRegistry_CategoryFiltering(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -267,6 +271,10 @@ func TestF02_ToolRegistry_CategoryFiltering(t *testing.T) {
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F2: Tool Registry")
 	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
 
+	if len(tools) == 0 {
+		t.Fatal("expected at least 1 filesystem tool, got none")
+	}
+
 	for _, tool := range tools {
 		if tool.Category != "filesystem" {
 			t.Errorf("expected category filesystem, got %s for tool %s", tool.Category, tool.ID)
@@ -276,6 +284,7 @@ func TestF02_ToolRegistry_CategoryFiltering(t *testing.T) {
 
 func TestF02_ToolRegistry_GetToolByID(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -285,18 +294,16 @@ func TestF02_ToolRegistry_GetToolByID(t *testing.T) {
 		t.Fatalf("GET /v1/tools/fs_read failed: %v", err)
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F2: Tool Registry")
+	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK {
-		if tool.ID != "fs_read" && tool.Name != "fs_read" {
-			t.Errorf("expected tool fs_read, got ID %q", tool.ID)
-		}
-	} else if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected status %d", resp.StatusCode)
+	if tool.ID != "fs_read" && tool.Name != "fs_read" {
+		t.Errorf("expected tool fs_read, got ID %q", tool.ID)
 	}
 }
 
 func TestF02_ToolRegistry_EnableDisableState(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -308,52 +315,51 @@ func TestF02_ToolRegistry_EnableDisableState(t *testing.T) {
 		t.Fatalf("PATCH /v1/tools/fs_read failed: %v", err)
 	}
 	srv.AdminClient().SkipIfUnregistered(t, resp, "F2: Tool Registry")
+	srv.AdminClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK {
-		if updated.Enabled != false {
-			t.Errorf("expected tool to be disabled, got enabled=true")
-		}
-		// Re-enable
-		_, _ = srv.AdminClient().PatchJSON(ctx, "/v1/tools/fs_read", map[string]any{"enabled": true}, nil)
-	} else if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected status %d: %s", resp.StatusCode, resp.String())
+	if updated.Enabled != false {
+		t.Errorf("expected tool to be disabled, got enabled=true")
 	}
+	// Re-enable
+	_, _ = srv.AdminClient().PatchJSON(ctx, "/v1/tools/fs_read", map[string]any{"enabled": true}, nil)
 }
 
 func TestF02_ToolRegistry_DisabledToolExecutionBlocked(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Disable tool first
-	patchResp, _ := srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": false})
-	srv.AdminClient().SkipIfUnregistered(t, patchResp, "F2: Tool Registry")
-
-	if patchResp != nil && patchResp.StatusCode == http.StatusOK {
-		defer func() {
-			_, _ = srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": true})
-		}()
-
-		// Attempt execution of disabled tool
-		req := harness.ToolExecuteRequest{
-			ToolName:            "sysinfo",
-			Arguments:           map[string]any{},
-			GrantedCapabilities: []string{"*"},
-		}
-		_, execResp, err := srv.WriteClient().ExecuteTool(ctx, req)
-		if err != nil {
-			t.Fatalf("execute failed: %v", err)
-		}
-		if execResp.StatusCode != http.StatusForbidden {
-			t.Fatalf("expected 403 Forbidden for disabled tool, got %d: %s", execResp.StatusCode, execResp.String())
-		}
+	patchResp, err := srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": false})
+	if err != nil {
+		t.Fatalf("disable tool patch failed: %v", err)
 	}
+	srv.AdminClient().SkipIfUnregistered(t, patchResp, "F2: Tool Registry")
+	srv.AdminClient().AssertStatus(t, patchResp, http.StatusOK)
+
+	defer func() {
+		_, _ = srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": true})
+	}()
+
+	// Attempt execution of disabled tool
+	req := harness.ToolExecuteRequest{
+		ToolName:            "sysinfo",
+		Arguments:           map[string]any{},
+		GrantedCapabilities: []string{"*"},
+	}
+	_, execResp, err := srv.WriteClient().ExecuteTool(ctx, req)
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	srv.WriteClient().AssertStatus(t, execResp, http.StatusForbidden)
 }
 
 // --- Feature 3: Unified Tool Executor ---
 
 func TestF03_ToolExecutor_DenyByDefault_NoCapabilities(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -367,14 +373,12 @@ func TestF03_ToolExecutor_DenyByDefault_NoCapabilities(t *testing.T) {
 		t.Fatalf("execute failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F3: Tool Executor")
-
-	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 403 Forbidden under deny-by-default, got %d: %s", resp.StatusCode, resp.String())
-	}
+	srv.WriteClient().AssertStatus(t, resp, http.StatusForbidden)
 }
 
 func TestF03_ToolExecutor_GrantedCapability_Permitted(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -388,14 +392,12 @@ func TestF03_ToolExecutor_GrantedCapability_Permitted(t *testing.T) {
 		t.Fatalf("execute failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F3: Tool Executor")
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 200 OK or 404 for sysinfo, got %d: %s", resp.StatusCode, resp.String())
-	}
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 }
 
 func TestF03_ToolExecutor_ExecutionTimeout_Enforced(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -403,24 +405,21 @@ func TestF03_ToolExecutor_ExecutionTimeout_Enforced(t *testing.T) {
 		ToolName: "terminal_exec",
 		Arguments: map[string]any{
 			"executable": "sleep",
-			"args":       []string{"2"},
 		},
 		GrantedCapabilities: []string{"tools:terminal", "*"},
-		TimeoutMS:           50, // 50ms timeout against 2s sleep
+		TimeoutMS:           50, // 50ms timeout against 3s sleep
 	}
 	_, resp, err := srv.WriteClient().ExecuteTool(ctx, req)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F3: Tool Executor")
-
-	if resp.StatusCode != http.StatusGatewayTimeout && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		t.Logf("execution timeout returned status: %d", resp.StatusCode)
-	}
+	srv.WriteClient().AssertStatus(t, resp, http.StatusGatewayTimeout)
 }
 
 func TestF03_ToolExecutor_OutputLimit_Truncation(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -428,23 +427,23 @@ func TestF03_ToolExecutor_OutputLimit_Truncation(t *testing.T) {
 		ToolName:            "sysinfo",
 		Arguments:           map[string]any{},
 		GrantedCapabilities: []string{"*"},
-		MaxOutputBytes:      64, // Truncate at 64 bytes
+		MaxOutputBytes:      16, // Truncate at 16 bytes
 	}
 	execResp, resp, err := srv.WriteClient().ExecuteTool(ctx, req)
 	if err != nil {
 		t.Fatalf("execute failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F3: Tool Executor")
+	srv.WriteClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK && execResp != nil {
-		if int64(len(execResp.Output)) > 64 && execResp.Truncated == false {
-			t.Errorf("expected output to be truncated at 64 bytes, got len %d", len(execResp.Output))
-		}
+	if execResp == nil || !execResp.Truncated || int64(len(execResp.Output)) > 16 {
+		t.Errorf("expected output to be truncated at 16 bytes, got truncated=%v len=%d output=%q", execResp.Truncated, len(execResp.Output), execResp.Output)
 	}
 }
 
 func TestF03_ToolExecutor_BoundedConcurrency_WorkerPool(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -466,7 +465,8 @@ func TestF03_ToolExecutor_BoundedConcurrency_WorkerPool(t *testing.T) {
 				errCh <- err
 				return
 			}
-			if resp.IsUnregisteredRoute() {
+			if resp.StatusCode != http.StatusOK {
+				errCh <- fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, resp.String())
 				return
 			}
 		}()

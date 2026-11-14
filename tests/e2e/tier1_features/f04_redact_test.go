@@ -15,9 +15,9 @@ func TestF04_Redact_JWTTokens(t *testing.T) {
 
 	output := security.RedactString(input)
 	if strings.Contains(output, "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c") {
-		// If secret pattern is not yet updated in M1, log status
-		t.Logf("JWT secret redaction pending M1 pattern expansion")
-	} else if !strings.Contains(output, security.Redacted) {
+		t.Fatalf("security violation: raw JWT secret leaked in output: %s", output)
+	}
+	if !strings.Contains(output, security.Redacted) {
 		t.Fatalf("expected output to contain %s, got: %s", security.Redacted, output)
 	}
 }
@@ -28,8 +28,9 @@ func TestF04_Redact_PEMPrivateKeys(t *testing.T) {
 
 	output := security.RedactString(input)
 	if strings.Contains(output, "MockKeyDataHereForTestingPurposeOnly123456789") {
-		t.Logf("PEM key redaction pending M1 pattern expansion")
-	} else if !strings.Contains(output, security.Redacted) {
+		t.Fatalf("security violation: raw PEM key leaked in output: %s", output)
+	}
+	if !strings.Contains(output, security.Redacted) {
 		t.Fatalf("expected output to contain %s, got: %s", security.Redacted, output)
 	}
 }
@@ -40,8 +41,9 @@ func TestF04_Redact_AWSAccessKeys(t *testing.T) {
 
 	output := security.RedactString(input)
 	if strings.Contains(output, awsKey) {
-		t.Logf("AWS key redaction pending M1 pattern expansion")
-	} else if !strings.Contains(output, security.Redacted) {
+		t.Fatalf("security violation: raw AWS key leaked in output: %s", output)
+	}
+	if !strings.Contains(output, security.Redacted) {
 		t.Fatalf("expected output to contain %s, got: %s", security.Redacted, output)
 	}
 }
@@ -52,8 +54,9 @@ func TestF04_Redact_GitHubPersonalAccessTokens(t *testing.T) {
 
 	output := security.RedactString(input)
 	if strings.Contains(output, ghp) {
-		t.Logf("GitHub PAT redaction pending M1 pattern expansion")
-	} else if !strings.Contains(output, security.Redacted) {
+		t.Fatalf("security violation: raw GitHub PAT leaked in output: %s", output)
+	}
+	if !strings.Contains(output, security.Redacted) {
 		t.Fatalf("expected output to contain %s, got: %s", security.Redacted, output)
 	}
 }
@@ -64,8 +67,9 @@ func TestF04_Redact_URLBasicAuthCredentials(t *testing.T) {
 
 	output := security.RedactString(input)
 	if strings.Contains(output, "superSecretPass123") {
-		t.Logf("URL basic auth redaction pending M1 pattern expansion")
-	} else if !strings.Contains(output, security.Redacted) {
+		t.Fatalf("security violation: raw URL basic auth leaked in output: %s", output)
+	}
+	if !strings.Contains(output, security.Redacted) {
 		t.Fatalf("expected output to contain %s, got: %s", security.Redacted, output)
 	}
 }

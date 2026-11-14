@@ -21,6 +21,7 @@ import (
 	"github.com/lovecode/lovecode/internal/security"
 	"github.com/lovecode/lovecode/internal/storage"
 	"github.com/lovecode/lovecode/internal/tools"
+	"github.com/lovecode/lovecode/internal/tools/builtin"
 )
 
 // version is overridden at build time: -ldflags "-X main.version=1.2.3".
@@ -105,6 +106,7 @@ func run() error {
 
 	toolsStore := tools.NewStore(db.DB)
 	toolsService := tools.NewService(toolsStore, auditLog, log)
+	_ = builtin.RegisterAll(toolsService.Registry())
 
 	agentStore := agents.NewStore(db.DB)
 	agentService := agents.NewService(cfg.Agents, agentStore, router, auditLog, log)

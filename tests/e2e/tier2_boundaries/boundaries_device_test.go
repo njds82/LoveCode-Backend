@@ -164,8 +164,8 @@ func TestBoundaries_Device_DisabledRemoteAccess_FlagCheck(t *testing.T) {
 	}
 	srv.WriteClient().SkipIfToolNotFound(t, resp, "device_exec")
 
-	if resp.StatusCode == http.StatusOK {
-		t.Logf("device execution handled: %s", resp.String())
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 403 Forbidden or 400 Bad Request when remote access is disabled, got %d: %s", resp.StatusCode, resp.String())
 	}
 }
 

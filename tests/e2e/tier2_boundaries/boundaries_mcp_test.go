@@ -132,10 +132,13 @@ func TestBoundaries_MCP_BrokenPipeRecovery(t *testing.T) {
 	_ = proc.Stdin.Close()
 	proc.Close()
 
-	// Attempting to write or read should report error immediately without deadlock
-	select {
-	case <-time.After(200 * time.Millisecond):
-		// Process closure completed cleanly
+	// Attempting to execute a JSON-RPC call over the closed pipe must report an error immediately
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	_, err := proc.Call(ctx, "ping", nil)
+	if err == nil {
+		t.Fatalf("expected error when calling RPC over closed broken pipe, got nil")
 	}
 }
 

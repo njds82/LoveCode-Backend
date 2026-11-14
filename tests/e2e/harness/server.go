@@ -24,6 +24,7 @@ import (
 	"github.com/lovecode/lovecode/internal/security"
 	"github.com/lovecode/lovecode/internal/storage"
 	"github.com/lovecode/lovecode/internal/tools"
+	"github.com/lovecode/lovecode/internal/tools/builtin"
 )
 
 // Server represents a running LoveCode test server instance.
@@ -132,6 +133,7 @@ func NewServer(t testing.TB, opts ...ServerOptions) *Server {
 
 	toolsStore := tools.NewStore(db.DB)
 	toolsService := tools.NewService(toolsStore, auditLog, logger)
+	_ = builtin.RegisterAll(toolsService.Registry())
 	_ = toolsService.Start(ctx)
 
 	agentStore := agents.NewStore(db.DB)

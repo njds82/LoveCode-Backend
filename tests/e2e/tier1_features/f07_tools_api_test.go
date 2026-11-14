@@ -11,6 +11,7 @@ import (
 
 func TestF07_ToolsAPI_ListTools_RequiresReadScope(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -32,6 +33,7 @@ func TestF07_ToolsAPI_ListTools_RequiresReadScope(t *testing.T) {
 
 func TestF07_ToolsAPI_GetTool_ByID(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -41,11 +43,10 @@ func TestF07_ToolsAPI_GetTool_ByID(t *testing.T) {
 		t.Fatalf("get tool failed: %v", err)
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F7: Tools API")
+	srv.ReadClient().AssertStatus(t, resp, http.StatusOK)
 
-	if resp.StatusCode == http.StatusOK {
-		if tool.ID != "sysinfo" && tool.Name != "sysinfo" {
-			t.Errorf("expected tool sysinfo, got ID: %s", tool.ID)
-		}
+	if tool.ID != "sysinfo" && tool.Name != "sysinfo" {
+		t.Errorf("expected tool sysinfo, got ID: %s", tool.ID)
 	}
 }
 
@@ -64,6 +65,7 @@ func TestF07_ToolsAPI_GetTool_NotFound(t *testing.T) {
 
 func TestF07_ToolsAPI_PatchTool_UpdateEnabled(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -73,30 +75,26 @@ func TestF07_ToolsAPI_PatchTool_UpdateEnabled(t *testing.T) {
 		t.Fatalf("patch with write token failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, respWrite, "F7: Tools API")
-
-	if respWrite.StatusCode != http.StatusForbidden && respWrite.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 403 Forbidden for non-admin patch, got: %d", respWrite.StatusCode)
-	}
+	srv.WriteClient().AssertStatus(t, respWrite, http.StatusForbidden)
 
 	// Admin token should be permitted
 	respAdmin, err := srv.AdminClient().Patch(ctx, "/v1/tools/sysinfo", map[string]any{"enabled": true})
 	if err != nil {
 		t.Fatalf("patch with admin token failed: %v", err)
 	}
-	if respAdmin.StatusCode != http.StatusOK && respAdmin.StatusCode != http.StatusNotFound {
-		t.Fatalf("unexpected admin patch status: %d", respAdmin.StatusCode)
-	}
+	srv.AdminClient().AssertStatus(t, respAdmin, http.StatusOK)
 }
 
 func TestF07_ToolsAPI_ExecuteTool_RequiresWriteScope(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	req := harness.ToolExecuteRequest{
 		ToolName:            "sysinfo",
 		Arguments:           map[string]any{},
-		GrantedCapabilities: []string{"*"},
+		GrantedCapabilities: []string{"tools:sysinfo", "*"},
 	}
 
 	// Read client attempting POST /v1/tools/execute should be rejected with 403
@@ -105,14 +103,12 @@ func TestF07_ToolsAPI_ExecuteTool_RequiresWriteScope(t *testing.T) {
 		t.Fatalf("execute with read token failed: %v", err)
 	}
 	srv.ReadClient().SkipIfUnregistered(t, resp, "F7: Tools API")
-
-	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 403 Forbidden for read token calling execute, got: %d", resp.StatusCode)
-	}
+	srv.ReadClient().AssertStatus(t, resp, http.StatusForbidden)
 }
 
 func TestF07_ToolsAPI_ExecuteTool_CapabilityDenied(t *testing.T) {
 	srv := harness.NewServer(t)
+	registerCoreTools(srv)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -131,8 +127,5 @@ func TestF07_ToolsAPI_ExecuteTool_CapabilityDenied(t *testing.T) {
 		t.Fatalf("execute failed: %v", err)
 	}
 	srv.WriteClient().SkipIfUnregistered(t, resp, "F7: Tools API")
-
-	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 403 Forbidden for missing capability, got %d: %s", resp.StatusCode, resp.String())
-	}
+	srv.WriteClient().AssertStatus(t, resp, http.StatusForbidden)
 }
